@@ -1,21 +1,30 @@
 {
-  "name": "kleinanzeigenapi",
+  "name": "kleinanzeigen-api",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "Kleinanzeigen API with Chrome automation",
+  "main": "dist/server/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node apps/server/server.js",
-    "dev": "node apps/server/server.js"
+    "build": "tsc",
+    "start": "node dist/src/server/server.js",
+    "dev": "ts-node src/server/server.ts",
+    "dev:watch": "nodemon --exec ts-node src/server/server.ts",
+    "clean": "rimraf dist"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
   "dependencies": {
-    "dotenv": "^17.2.1",
-    "fastify": "^5.5.0",
-    "puppeteer": "^24.17.0",
-    "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2"
-  }
+    "fastify": "^4.24.3",
+    "puppeteer": "^21.5.2",
+    "axios": "^1.6.2",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/puppeteer": "^7.0.4",
+    "typescript": "^5.3.2",
+    "ts-node": "^10.9.1",
+    "nodemon": "^3.0.2",
+    "rimraf": "^5.0.5"
+  },
+  "keywords": ["api", "kleinanzeigen", "chrome", "automation"],
+  "author": "",
+  "license": "MIT"
 }
