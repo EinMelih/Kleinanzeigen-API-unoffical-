@@ -13,6 +13,9 @@ export interface RefreshResult {
 export class CookieRefreshService {
   private readonly cookieValidator: CookieValidator;
   private refreshInterval: NodeJS.Timeout | null = null;
+  private isRunning: boolean = false;
+  private interval: number = 0.25;
+  private lastRefresh: Date = new Date();
 
   constructor() {
     this.cookieValidator = new CookieValidator();
@@ -24,23 +27,44 @@ export class CookieRefreshService {
       clearInterval(this.refreshInterval);
     }
 
-    const intervalMs = intervalHours * 60 * 60 * 1000;
+    this.isRunning = true;
+    this.interval = intervalHours;
+    this.lastRefresh = new Date();
 
+    const intervalMs = intervalHours * 60 * 60 * 1000;
     this.refreshInterval = setInterval(async () => {
-      console.log(`Auto-refreshing cookies every ${intervalHours} hours...`);
-      await this.refreshAllCookies();
+      try {
+        await this.refreshAllCookies();
+        this.lastRefresh = new Date();
+      } catch (error) {
+        console.error("❌ Auto-refresh error:", error);
+      }
     }, intervalMs);
 
-    console.log(`Cookie auto-refresh started (every ${intervalHours} hours)`);
+    console.log(`🔄 Auto-refresh started (every ${intervalHours} hours)`);
   }
 
-  // Stop automatic refresh
+  // Stop automatic cookie refresh
   stopAutoRefresh(): void {
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval);
       this.refreshInterval = null;
-      console.log("Cookie auto-refresh stopped");
     }
+    this.isRunning = false;
+    console.log("🛑 Auto-refresh stopped");
+  }
+
+  // Get auto-refresh status
+  getAutoRefreshStatus(): {
+    isRunning: boolean;
+    interval: number;
+    lastRefresh: Date;
+  } {
+    return {
+      isRunning: this.isRunning,
+      interval: this.interval,
+      lastRefresh: this.lastRefresh,
+    };
   }
 
   // Refresh cookies for specific user

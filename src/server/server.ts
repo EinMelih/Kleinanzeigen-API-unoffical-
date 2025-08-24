@@ -535,6 +535,32 @@ app.post(
   }
 );
 
+// GET /cookies/auto-refresh/status - Get auto-refresh status
+app.get(
+  "/cookies/auto-refresh/status",
+  async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const refreshService = new CookieRefreshService();
+      const status = refreshService.getAutoRefreshStatus();
+
+      return reply.send({
+        status: "success",
+        isRunning: status.isRunning,
+        interval: status.interval,
+        lastRefresh: status.lastRefresh,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      request.log.error({ err }, "auto-refresh status failed");
+      return reply.status(500).send({
+        status: "error",
+        message:
+          err instanceof Error ? err.message : "Auto-refresh status failed",
+      });
+    }
+  }
+);
+
 // GET /tokens/analyze/:email - Analyze JWT tokens and expiry times
 app.get<{ Params: { email: string } }>(
   "/tokens/analyze/:email",
@@ -562,11 +588,23 @@ app.get<{ Params: { email: string } }>(
   }
 );
 
-const PORT = process.env["PORT"] || 87;
-app
-  .listen({ port: Number(PORT), host: "0.0.0.0" })
-  .then(() => console.log(`API listening on http://localhost:${PORT}`))
-  .catch((e) => {
+// Import and register server controller
+import { serverController } from "../controllers/server-controller";
+
+// Start server function
+async function startServer() {
+  try {
+    // Register server controller routes
+    await serverController(app);
+
+    const PORT = process.env["PORT"] || 87;
+    await app.listen({ port: Number(PORT), host: "0.0.0.0" });
+    console.log(`API listening on http://localhost:${PORT}`);
+  } catch (e) {
     console.error("Failed to start server", e);
     process.exit(1);
-  });
+  }
+}
+
+// Start the server
+startServer();

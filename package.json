@@ -24,7 +24,12 @@
     "nodemon": "^3.0.2",
     "rimraf": "^5.0.5"
   },
-  "keywords": ["api", "kleinanzeigen", "chrome", "automation"],
+  "keywords": [
+    "api",
+    "kleinanzeigen",
+    "chrome",
+    "automation"
+  ],
   "author": "",
   "license": "MIT"
 }
