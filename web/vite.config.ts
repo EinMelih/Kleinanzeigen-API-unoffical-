@@ -11,10 +11,10 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3000,
+    port: 8081,
     proxy: {
       "/api": {
-        target: "http://localhost:87",
+        target: "http://localhost:8082",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },

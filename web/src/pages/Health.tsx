@@ -1,65 +1,70 @@
-import { useState, useEffect } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { 
-  Activity, 
-  RefreshCw, 
-  CheckCircle, 
-  AlertTriangle,
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Activity,
+  CheckCircle,
   Clock,
   Cookie,
-  FileText
-} from 'lucide-react'
-import { useToast } from '@/hooks/use-toast'
+  FileText,
+  RefreshCw,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 
 interface HealthStatus {
-  status: string
-  timestamp: string
-  totalFiles: number
-  validFiles: number
-  expiredFiles: number
-  totalCookieCount: number
-  nextExpiry: string
-  validityDuration: string
+  status: string;
+  timestamp: string;
+  totalFiles: number;
+  validFiles: number;
+  expiredFiles: number;
+  totalCookieCount: number;
+  nextExpiry: string;
+  validityDuration: string;
 }
 
 export default function Health() {
-  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null)
-  const [loading, setLoading] = useState(true)
-  const { toast } = useToast()
+  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
   useEffect(() => {
-    fetchHealthStatus()
-  }, [])
+    fetchHealthStatus();
+  }, []);
 
   const fetchHealthStatus = async () => {
-    setLoading(true)
+    setLoading(true);
     try {
-      const response = await fetch('/api/health')
-      const data = await response.json()
-      setHealthStatus(data)
+      const response = await fetch("/api/health");
+      const data = await response.json();
+      setHealthStatus(data);
       toast({
         title: "Status aktualisiert",
         description: "Health-Status erfolgreich abgerufen",
-      })
+      });
     } catch (error) {
       toast({
         title: "Fehler",
         description: "Health-Status konnte nicht abgerufen werden",
         variant: "destructive",
-      })
+      });
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   if (loading && !healthStatus) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
-    )
+    );
   }
 
   return (
@@ -80,53 +85,71 @@ export default function Health() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center space-x-2">
-              <Badge variant={healthStatus?.status === 'healthy' ? 'default' : 'destructive'}>
-                {healthStatus?.status || 'Unknown'}
+              <Badge
+                variant={
+                  healthStatus?.status === "healthy" ? "default" : "destructive"
+                }
+              >
+                {healthStatus?.status || "Unknown"}
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Letzte Prüfung: {healthStatus?.timestamp ? new Date(healthStatus.timestamp).toLocaleString() : 'N/A'}
+              Letzte Prüfung:{" "}
+              {healthStatus?.timestamp
+                ? new Date(healthStatus.timestamp).toLocaleString()
+                : "N/A"}
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Cookie Dateien</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Cookie Dateien
+            </CardTitle>
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{healthStatus?.totalFiles || 0}</div>
+            <div className="text-2xl font-bold">
+              {healthStatus?.totalFiles || 0}
+            </div>
             <p className="text-xs text-muted-foreground">
-              {healthStatus?.validFiles || 0} gültig, {healthStatus?.expiredFiles || 0} abgelaufen
+              {healthStatus?.validFiles || 0} gültig,{" "}
+              {healthStatus?.expiredFiles || 0} abgelaufen
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Gesamte Cookies</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Gesamte Cookies
+            </CardTitle>
             <Cookie className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{healthStatus?.totalCookieCount || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              Über alle Benutzer
-            </p>
+            <div className="text-2xl font-bold">
+              {healthStatus?.totalCookieCount || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">Über alle Benutzer</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Nächster Ablauf</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Nächster Ablauf
+            </CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {healthStatus?.nextExpiry ? new Date(healthStatus.nextExpiry).toLocaleDateString() : 'N/A'}
+              {healthStatus?.nextExpiry
+                ? new Date(healthStatus.nextExpiry).toLocaleDateString()
+                : "N/A"}
             </div>
             <p className="text-xs text-muted-foreground">
-              {healthStatus?.validityDuration || 'Unknown'}
+              {healthStatus?.validityDuration || "Unknown"}
             </p>
           </CardContent>
         </Card>
@@ -139,9 +162,7 @@ export default function Health() {
             <CheckCircle className="h-5 w-5" />
             Detaillierter Status
           </CardTitle>
-          <CardDescription>
-            Aktuelle Werte und Statistiken
-          </CardDescription>
+          <CardDescription>Aktuelle Werte und Statistiken</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2">
@@ -149,20 +170,36 @@ export default function Health() {
               <h4 className="font-medium mb-3">Cookie-Übersicht</h4>
               <div className="space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Gesamte Dateien:</span>
-                  <span className="font-medium">{healthStatus?.totalFiles || 0}</span>
+                  <span className="text-sm text-muted-foreground">
+                    Gesamte Dateien:
+                  </span>
+                  <span className="font-medium">
+                    {healthStatus?.totalFiles || 0}
+                  </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Gültige Dateien:</span>
-                  <span className="font-medium text-green-600">{healthStatus?.validFiles || 0}</span>
+                  <span className="text-sm text-muted-foreground">
+                    Gültige Dateien:
+                  </span>
+                  <span className="font-medium text-green-600">
+                    {healthStatus?.validFiles || 0}
+                  </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Abgelaufene Dateien:</span>
-                  <span className="font-medium text-red-600">{healthStatus?.expiredFiles || 0}</span>
+                  <span className="text-sm text-muted-foreground">
+                    Abgelaufene Dateien:
+                  </span>
+                  <span className="font-medium text-red-600">
+                    {healthStatus?.expiredFiles || 0}
+                  </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Gesamte Cookies:</span>
-                  <span className="font-medium">{healthStatus?.totalCookieCount || 0}</span>
+                  <span className="text-sm text-muted-foreground">
+                    Gesamte Cookies:
+                  </span>
+                  <span className="font-medium">
+                    {healthStatus?.totalCookieCount || 0}
+                  </span>
                 </div>
               </div>
             </div>
@@ -170,20 +207,32 @@ export default function Health() {
               <h4 className="font-medium mb-3">Zeit-Informationen</h4>
               <div className="space-y-2">
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Letzte Aktualisierung:</span>
+                  <span className="text-sm text-muted-foreground">
+                    Letzte Aktualisierung:
+                  </span>
                   <span className="font-medium">
-                    {healthStatus?.timestamp ? new Date(healthStatus.timestamp).toLocaleString() : 'N/A'}
+                    {healthStatus?.timestamp
+                      ? new Date(healthStatus.timestamp).toLocaleString()
+                      : "N/A"}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Nächster Ablauf:</span>
+                  <span className="text-sm text-muted-foreground">
+                    Nächster Ablauf:
+                  </span>
                   <span className="font-medium">
-                    {healthStatus?.nextExpiry ? new Date(healthStatus.nextExpiry).toLocaleString() : 'N/A'}
+                    {healthStatus?.nextExpiry
+                      ? new Date(healthStatus.nextExpiry).toLocaleString()
+                      : "N/A"}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Gültigkeitsdauer:</span>
-                  <span className="font-medium">{healthStatus?.validityDuration || 'Unknown'}</span>
+                  <span className="text-sm text-muted-foreground">
+                    Gültigkeitsdauer:
+                  </span>
+                  <span className="font-medium">
+                    {healthStatus?.validityDuration || "Unknown"}
+                  </span>
                 </div>
               </div>
             </div>
@@ -245,5 +294,5 @@ export default function Health() {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

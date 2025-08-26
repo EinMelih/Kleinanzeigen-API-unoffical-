@@ -1,5 +1,6 @@
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
+import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import {
   Activity,
   Cookie,
@@ -9,11 +10,6 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
-
-interface LayoutProps {
-  children: React.ReactNode;
-}
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -22,7 +18,7 @@ const navigation = [
   { name: "Health", href: "/health", icon: Activity },
 ];
 
-export default function Layout({ children }: LayoutProps) {
+export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
 
@@ -124,7 +120,7 @@ export default function Layout({ children }: LayoutProps) {
         {/* Page content */}
         <main className="py-6">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            {children}
+            <Outlet />
           </div>
         </main>
       </div>
