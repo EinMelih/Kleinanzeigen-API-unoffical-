@@ -6,7 +6,7 @@ import { router } from "./router";
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+    <ThemeProvider defaultTheme="dark">
       <AuthProvider>
         <RouterProvider router={router} />
         <Toaster />

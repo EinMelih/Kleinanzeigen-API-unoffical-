@@ -8,15 +8,22 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { motion } from "framer-motion";
 import {
   Activity,
   AlertCircle,
+  BarChart3,
   CheckCircle,
   Clock,
+  Eye,
+  MessageSquare,
   Monitor,
-  Play,
   RefreshCw,
-  Square,
+  Search,
+  Target,
+  TrendingUp,
+  Users,
+  Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -39,98 +46,142 @@ interface ChromeStatus {
   lastCheck: string;
 }
 
-// Utility function to format time differences
-const formatTimeDifference = (dateString: string): string => {
-  try {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = date.getTime() - now.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    const diffHours = Math.floor(
-      (diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)
-    );
-    const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-
-    if (diffMs < 0) {
-      return "Expired";
-    } else if (diffDays > 0) {
-      return `${diffDays} day${diffDays !== 1 ? "s" : ""}`;
-    } else if (diffHours > 0) {
-      return `${diffHours} hour${diffHours !== 1 ? "s" : ""}`;
-    } else if (diffMinutes > 0) {
-      return `${diffMinutes} minute${diffMinutes !== 1 ? "s" : ""}`;
-    } else {
-      return "Less than 1 minute";
-    }
-  } catch (error) {
-    return "Invalid date";
-  }
+// Mock data for demo
+const mockStats = {
+  radarItems: 127,
+  activeAds: 45,
+  messages: 12,
+  tasks: 8,
+  systemHealth: 94,
+  todayViews: 1247,
+  totalUsers: 3420,
+  avgResponseTime: 120,
 };
 
-// Utility function to format date in German timezone
-const formatGermanDate = (dateString: string): string => {
-  try {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat("de-DE", {
-      timeZone: "Europe/Berlin",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).format(date);
-  } catch (error) {
-    return "Invalid date";
-  }
-};
+const StatCard = ({
+  title,
+  value,
+  change,
+  icon: Icon,
+  color = "text-primary",
+  delay = 0,
+}: {
+  title: string;
+  value: string | number;
+  change?: string;
+  icon: any;
+  color?: string;
+  delay?: number;
+}) => (
+  <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ delay, duration: 0.5 }}
+  >
+    <Card
+      variant="elevated"
+      className="group hover:shadow-lg transition-all duration-300"
+    >
+      <CardContent className="p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            <p className="text-2xl font-bold">{value}</p>
+            {change && (
+              <p className="text-xs text-green-600 flex items-center mt-1">
+                <TrendingUp className="h-3 w-3 mr-1" />
+                {change}
+              </p>
+            )}
+          </div>
+          <div
+            className={`p-3 rounded-xl bg-gradient-to-br from-background to-muted group-hover:shadow-lg transition-all duration-300 ${color}`}
+          >
+            <Icon className="h-6 w-6" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  </motion.div>
+);
+
+const QuickActionCard = ({
+  title,
+  description,
+  icon: Icon,
+  onClick,
+  color = "text-primary",
+  delay = 0,
+}: {
+  title: string;
+  description: string;
+  icon: any;
+  onClick: () => void;
+  color?: string;
+  delay?: number;
+}) => (
+  <motion.div
+    initial={{ opacity: 0, scale: 0.9 }}
+    animate={{ opacity: 1, scale: 1 }}
+    transition={{ delay, duration: 0.5 }}
+  >
+    <Card
+      variant="glass"
+      className="group cursor-pointer hover:scale-105 transition-all duration-300"
+      onClick={onClick}
+    >
+      <CardContent className="p-6 text-center">
+        <div
+          className={`w-12 h-12 mx-auto mb-4 rounded-xl bg-gradient-to-br from-background to-muted flex items-center justify-center group-hover:shadow-glow transition-all duration-300 ${color}`}
+        >
+          <Icon className="h-6 w-6" />
+        </div>
+        <h3 className="font-semibold mb-2">{title}</h3>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </CardContent>
+    </Card>
+  </motion.div>
+);
 
 export default function Dashboard() {
   const [healthData, setHealthData] = useState<HealthData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [chromeStatus, setChromeStatus] = useState<ChromeStatus>({
-    isRunning: false,
-    port: 9222,
-    lastCheck: new Date().toISOString(),
-  });
-  const [chromeActionLoading, setChromeActionLoading] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [chromeStatus, setChromeStatus] = useState<ChromeStatus | null>(null);
+  const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
-  const fetchHealthData = async () => {
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/health");
-      if (response.ok) {
-        const data = await response.json();
-        setHealthData(data);
-        setChromeStatus((prev) => ({
-          ...prev,
-          isRunning: true,
-          lastCheck: new Date().toISOString(),
-        }));
-      } else {
-        setChromeStatus((prev) => ({
-          ...prev,
-          isRunning: false,
-          lastCheck: new Date().toISOString(),
-        }));
-        toast({
-          title: "Error",
-          description: "Failed to fetch health data",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      setChromeStatus((prev) => ({
-        ...prev,
-        isRunning: false,
+      // In a real app, these would be actual API calls
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulate loading
+
+      // Mock health data
+      setHealthData({
+        status: "healthy",
+        timestamp: new Date().toISOString(),
+        cookieFiles: 5,
+        cookiesInFile: 12,
+        totalFiles: 15,
+        validFiles: 14,
+        expiredFiles: 1,
+        totalCookieCount: 180,
+        nextExpiry: new Date(Date.now() + 86400000 * 7).toISOString(),
+        validityDuration: "7 days",
+      });
+
+      setChromeStatus({
+        isRunning: true,
+        port: 9222,
         lastCheck: new Date().toISOString(),
-      }));
+      });
+    } catch (error) {
       toast({
-        title: "Error",
-        description: "API server is not responding",
+        title: "Error loading dashboard",
+        description: "Failed to fetch dashboard data",
         variant: "destructive",
       });
     } finally {
@@ -138,346 +189,301 @@ export default function Dashboard() {
     }
   };
 
-  const startChrome = async () => {
-    if (!email.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter an email address",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      setChromeActionLoading(true);
-      const response = await fetch("/api/server/start", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email: email.trim(),
-          password: password.trim() || undefined,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        toast({
-          title: "Success",
-          description: data.message,
-        });
-        // Wait a moment then check status
-        setTimeout(() => {
-          fetchHealthData();
-        }, 2000);
-      } else {
-        const error = await response.json();
-        toast({
-          title: "Error",
-          description: error.message || "Failed to start Chrome browser",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to start Chrome browser",
-        variant: "destructive",
-      });
-    } finally {
-      setChromeActionLoading(false);
-    }
-  };
-
-  const stopChrome = async () => {
-    try {
-      setChromeActionLoading(true);
-      const response = await fetch("/api/server/stop", {
-        method: "POST",
-      });
-
-      if (response.ok) {
-        toast({
-          title: "Success",
-          description: "Chrome browser stopped successfully",
-        });
-        setChromeStatus((prev) => ({
-          ...prev,
-          isRunning: false,
-          lastCheck: new Date().toISOString(),
-        }));
-      } else {
-        const error = await response.json();
-        toast({
-          title: "Error",
-          description: error.message || "Failed to stop Chrome browser",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to stop Chrome browser",
-        variant: "destructive",
-      });
-    } finally {
-      setChromeActionLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchHealthData();
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(fetchHealthData, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+            <p className="text-muted-foreground">Loading your workspace...</p>
+          </div>
+        </div>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i} className="animate-pulse">
+              <CardContent className="p-6">
+                <div className="h-20 bg-muted rounded"></div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-8">
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex items-center justify-between"
+      >
         <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground mt-1">
-            Monitor and control your Kleinanzeigen API system
+          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+            Dashboard
+          </h1>
+          <p className="text-muted-foreground">
+            Welcome back! Here's your RogueAnzeigen workspace overview.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center space-x-2">
+          <Badge
+            variant="outline"
+            className="bg-green-500/10 text-green-600 border-green-500/20"
+          >
+            <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
+            System Online
+          </Badge>
           <Button
-            onClick={fetchHealthData}
-            disabled={loading}
             variant="outline"
             size="sm"
+            onClick={fetchDashboardData}
+            className="hover:bg-primary/10"
           >
-            <RefreshCw
-              className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`}
-            />
+            <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
         </div>
+      </motion.div>
+
+      {/* Stats Grid */}
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title="Radar Items"
+          value={mockStats.radarItems}
+          change="+18% today"
+          icon={Target}
+          color="text-primary"
+          delay={0.1}
+        />
+        <StatCard
+          title="Active Ads"
+          value={mockStats.activeAds}
+          change="+5 new"
+          icon={Users}
+          color="text-purple-500"
+          delay={0.2}
+        />
+        <StatCard
+          title="Messages"
+          value={mockStats.messages}
+          change="+3 unread"
+          icon={MessageSquare}
+          color="text-orange-500"
+          delay={0.3}
+        />
+        <StatCard
+          title="System Health"
+          value={`${mockStats.systemHealth}%`}
+          change="Excellent"
+          icon={Activity}
+          color="text-green-500"
+          delay={0.4}
+        />
       </div>
 
-      {/* Chrome Browser Control Section */}
-      <Card className="border-l-4 border-l-blue-500">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Monitor className="h-5 w-5 text-blue-600" />
-            Chrome Browser Control
-          </CardTitle>
-          <CardDescription>
-            Start or stop the Chrome browser for web scraping operations
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label htmlFor="email" className="text-sm font-medium">
-                Email Address
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter email for login"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="password" className="text-sm font-medium">
-                Password (Optional)
-              </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter password if needed"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
-            <div className="flex items-center gap-3">
-              <div
-                className={`p-2 rounded-full ${
-                  chromeStatus.isRunning ? "bg-green-100" : "bg-red-100"
-                }`}
-              >
-                <Activity
-                  className={`h-5 w-5 ${
-                    chromeStatus.isRunning ? "text-green-600" : "text-red-600"
-                  }`}
-                />
-              </div>
-              <div>
-                <p className="font-medium">
-                  Status: {chromeStatus.isRunning ? "Running" : "Stopped"}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Port: {chromeStatus.port} | Last check:{" "}
-                  {formatGermanDate(chromeStatus.lastCheck)}
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={startChrome}
-                disabled={
-                  chromeActionLoading || chromeStatus.isRunning || !email.trim()
-                }
-                className="bg-green-600 hover:bg-green-700"
-              >
-                <Play className="h-4 w-4 mr-2" />
-                Start Chrome
-              </Button>
-              <Button
-                onClick={stopChrome}
-                disabled={chromeActionLoading || !chromeStatus.isRunning}
-                variant="destructive"
-              >
-                <Square className="h-4 w-4 mr-2" />
-                Stop Chrome
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Health Status */}
-      <Card className="border-l-4 border-l-green-500">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CheckCircle className="h-5 w-5 text-green-600" />
-            API Health Status
-          </CardTitle>
-          <CardDescription>
-            Current status of the Kleinanzeigen API and cookie system
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {healthData ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Status
-                </p>
-                <Badge
-                  variant={
-                    healthData.status === "healthy" ? "default" : "destructive"
-                  }
-                  className="text-sm"
-                >
-                  {healthData.status}
-                </Badge>
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Cookie Files
-                </p>
-                <p className="text-2xl font-bold">{healthData.totalFiles}</p>
-                <div className="flex gap-2 text-sm">
-                  <span className="text-green-600 flex items-center gap-1">
-                    <CheckCircle className="h-3 w-3" />
-                    {healthData.validFiles} valid
-                  </span>
-                  <span className="text-red-600 flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    {healthData.expiredFiles} expired
-                  </span>
+      {/* Main Content Grid */}
+      <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+        {/* System Status */}
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.5 }}
+          className="lg:col-span-2"
+        >
+          <Card variant="gradient" className="h-full">
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Monitor className="h-5 w-5 mr-2 text-primary" />
+                System Status
+              </CardTitle>
+              <CardDescription>
+                Real-time system health and performance metrics
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span>Chrome Status</span>
+                    <Badge
+                      variant={
+                        chromeStatus?.isRunning ? "default" : "destructive"
+                      }
+                    >
+                      {chromeStatus?.isRunning ? "Running" : "Stopped"}
+                    </Badge>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-2">
+                    <div
+                      className="bg-primary h-2 rounded-full transition-all duration-1000"
+                      style={{ width: chromeStatus?.isRunning ? "100%" : "0%" }}
+                    ></div>
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Total Cookies
-                </p>
-                <p className="text-2xl font-bold">
-                  {healthData.totalCookieCount}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Across all users
-                </p>
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Next Expiry
-                </p>
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">
-                      {formatGermanDate(healthData.nextExpiry)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatTimeDifference(healthData.nextExpiry)} remaining
-                    </p>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span>Cookie Health</span>
+                    <Badge variant="default">
+                      {healthData?.validFiles}/{healthData?.totalFiles} Valid
+                    </Badge>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-2">
+                    <div
+                      className="bg-green-500 h-2 rounded-full transition-all duration-1000"
+                      style={{
+                        width: healthData
+                          ? `${
+                              (healthData.validFiles / healthData.totalFiles) *
+                              100
+                            }%`
+                          : "0%",
+                      }}
+                    ></div>
                   </div>
                 </div>
               </div>
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Validity Duration
-                </p>
-                <p className="text-sm font-medium">
-                  {healthData.validityDuration}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Last Updated
-                </p>
-                <p className="text-sm">
-                  {formatGermanDate(healthData.timestamp)}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-              <p className="text-muted-foreground">
-                {loading
-                  ? "Loading health data..."
-                  : "No health data available"}
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
-      {/* Quick Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-          <CardDescription>Common tasks and operations</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Button
-              variant="outline"
-              className="h-20 hover:bg-blue-50 hover:border-blue-200"
-            >
-              <div className="text-center">
-                <RefreshCw className="h-6 w-6 mx-auto mb-2 text-blue-600" />
-                <p className="text-sm font-medium">Auto-Refresh</p>
-                <p className="text-xs text-muted-foreground">
-                  Manage cookie refresh
-                </p>
+              <div className="grid gap-4 md:grid-cols-3 text-center">
+                <div className="p-4 rounded-lg bg-background/50">
+                  <div className="text-2xl font-bold text-primary">
+                    {mockStats.todayViews}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Views Today
+                  </div>
+                </div>
+                <div className="p-4 rounded-lg bg-background/50">
+                  <div className="text-2xl font-bold text-orange-500">
+                    {mockStats.avgResponseTime}ms
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Avg Response
+                  </div>
+                </div>
+                <div className="p-4 rounded-lg bg-background/50">
+                  <div className="text-2xl font-bold text-purple-500">
+                    {mockStats.totalUsers}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Total Users
+                  </div>
+                </div>
               </div>
-            </Button>
-            <Button
-              variant="outline"
-              className="h-20 hover:bg-green-50 hover:border-green-200"
-            >
-              <div className="text-center">
-                <Activity className="h-6 w-6 mx-auto mb-2 text-green-600" />
-                <p className="text-sm font-medium">Health Check</p>
-                <p className="text-xs text-muted-foreground">Detailed status</p>
-              </div>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Quick Actions */}
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.6 }}
+          className="space-y-6"
+        >
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <Zap className="h-5 w-5 mr-2 text-yellow-500" />
+                Quick Actions
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <QuickActionCard
+                title="Start Search"
+                description="Begin radar monitoring"
+                icon={Search}
+                onClick={() => toast({ title: "Search started!" })}
+                color="text-primary"
+                delay={0.7}
+              />
+              <QuickActionCard
+                title="View Analytics"
+                description="Performance insights"
+                icon={BarChart3}
+                onClick={() => toast({ title: "Analytics opened!" })}
+                color="text-cyan-500"
+                delay={0.8}
+              />
+              <QuickActionCard
+                title="Check Rules"
+                description="SAFE configurations"
+                icon={CheckCircle}
+                onClick={() => toast({ title: "Rules checked!" })}
+                color="text-green-500"
+                delay={0.9}
+              />
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+
+      {/* Recent Activity */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 1.0 }}
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Clock className="h-5 w-5 mr-2 text-blue-500" />
+              Recent Activity
+            </CardTitle>
+            <CardDescription>
+              Latest events and system activities
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {[
+                {
+                  icon: Eye,
+                  text: "New ad detected: iPhone 14 Pro",
+                  time: "2 min ago",
+                  color: "text-primary",
+                },
+                {
+                  icon: MessageSquare,
+                  text: "Message received from seller",
+                  time: "5 min ago",
+                  color: "text-orange-500",
+                },
+                {
+                  icon: Target,
+                  text: "Radar scan completed successfully",
+                  time: "10 min ago",
+                  color: "text-green-500",
+                },
+                {
+                  icon: AlertCircle,
+                  text: "Rate limit reached, cooling down",
+                  time: "15 min ago",
+                  color: "text-yellow-500",
+                },
+              ].map((activity, index) => (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 1.1 + index * 0.1 }}
+                  className="flex items-center space-x-3 p-3 rounded-lg hover:bg-accent/50 transition-colors"
+                >
+                  <activity.icon className={`h-4 w-4 ${activity.color}`} />
+                  <div className="flex-1">
+                    <p className="text-sm">{activity.text}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {activity.time}
+                    </p>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
     </div>
   );
 }

@@ -597,7 +597,7 @@ async function startServer() {
     // Register server controller routes
     await serverController(app);
 
-    const PORT = process.env["PORT"] || 8082;
+    const PORT = process.env["PORT"] || 87;
     await app.listen({ port: Number(PORT), host: "0.0.0.0" });
     console.log(`API listening on http://localhost:${PORT}`);
   } catch (e) {

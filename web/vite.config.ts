@@ -11,10 +11,11 @@ export default defineConfig({
     },
   },
   server: {
-    port: 8081,
+    port: 8082,
+    strictPort: true,
     proxy: {
       "/api": {
-        target: "http://localhost:8082",
+        target: "http://localhost:87",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },

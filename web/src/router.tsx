@@ -8,10 +8,15 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import Layout from "./components/Layout";
 import { NotFound } from "./components/NotFound";
 import { adsApi, analyticsApi, searchApi } from "./lib/api";
+import Ads from "./pages/Ads";
 import Auth from "./pages/Auth";
 import Cookies from "./pages/Cookies";
 import Dashboard from "./pages/Dashboard";
 import Health from "./pages/Health";
+import Items from "./pages/Items";
+import Messages from "./pages/Messages";
+import Profile from "./pages/Profile";
+import Radar from "./pages/Radar";
 
 // Create the root route using createRootRoute
 const rootRoute = createRootRoute({
@@ -34,15 +39,18 @@ const dashboardRoute = createRoute({
   component: Dashboard,
 });
 
+// Items route
+const itemsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/items",
+  component: Items,
+});
+
 // Ads routes
 const adsRoute = createRoute({
-  getParentRoute: () => dashboardRoute,
+  getParentRoute: () => rootRoute,
   path: "/ads",
-  component: () => <div>Ads List Page</div>, // Placeholder component
-  loader: async () => {
-    // Fetch ads data from API
-    return adsApi.getAll();
-  },
+  component: Ads,
 });
 
 const adDetailRoute = createRoute({
@@ -63,6 +71,20 @@ const adEditRoute = createRoute({
     // Fetch ad data for editing
     return adsApi.getById(params.id);
   },
+});
+
+// Messages route
+const messagesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/messages",
+  component: Messages,
+});
+
+// Radar route
+const radarRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/radar",
+  component: Radar,
 });
 
 // Search route
@@ -125,11 +147,20 @@ const healthRoute = createRoute({
   component: Health,
 });
 
+const profileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/profile",
+  component: Profile,
+});
+
 // Create the route tree
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  itemsRoute,
+  adsRoute,
+  messagesRoute,
+  radarRoute,
   dashboardRoute.addChildren([
-    adsRoute,
     adDetailRoute,
     adEditRoute,
     searchRoute,
@@ -140,6 +171,7 @@ const routeTree = rootRoute.addChildren([
   authLogoutRoute,
   cookiesRoute,
   healthRoute,
+  profileRoute,
 ]);
 
 // Create the router

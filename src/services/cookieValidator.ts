@@ -242,7 +242,9 @@ export class CookieValidator {
       });
 
       // Wait a bit for page to fully load
-      await page.waitForTimeout(COOKIE_CONFIG.TIMEOUTS.WAIT_FOR_LOAD);
+      await new Promise((resolve) =>
+        setTimeout(resolve, COOKIE_CONFIG.TIMEOUTS.WAIT_FOR_LOAD)
+      );
 
       // Check login status using #user-email element as primary indicator
       const loggedIn = await page.evaluate(
