@@ -186,6 +186,96 @@ Stop automatic cookie refresh.
 
 Server health status.
 
+### OAuth2 Email Verification (NEW)
+
+Diese Endpunkte ermöglichen automatische Email-Verifizierung für Kleinanzeigen 2FA.
+
+#### `GET /oauth/microsoft/auth?email=user@example.com`
+
+Get Microsoft OAuth authorization URL. Der Benutzer muss diese URL im Browser öffnen und einmalig zustimmen.
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "authUrl": "https://login.microsoftonline.com/...",
+  "message": "Open this URL in a browser to authorize",
+  "provider": "microsoft"
+}
+```
+
+#### `GET /oauth/microsoft/callback`
+
+OAuth Callback für Microsoft (wird automatisch nach Login aufgerufen).
+
+#### `GET /oauth/gmail/auth?email=user@example.com`
+
+Get Gmail OAuth authorization URL.
+
+#### `GET /oauth/gmail/callback`
+
+OAuth Callback für Gmail.
+
+#### `POST /oauth/verify-email`
+
+Automatische Kleinanzeigen Email-Verifizierung mit OAuth2.
+
+**Request Body:**
+
+```json
+{
+  "email": "user@example.com",
+  "timeout": 60000
+}
+```
+
+**Response (Success):**
+
+```json
+{
+  "status": "verification_successful",
+  "message": "Email verification completed successfully",
+  "verificationLink": "https://www.kleinanzeigen.de/...",
+  "timestamp": "2024-01-15T10:30:00.000Z"
+}
+```
+
+#### `GET /oauth/status/:email`
+
+Prüfe OAuth-Autorisierungsstatus für eine Email.
+
+**Response:**
+
+```json
+{
+  "status": "authorized",
+  "email": "user@example.com",
+  "authorized": true,
+  "provider": "microsoft",
+  "expiresAt": "2024-01-15T10:30:00.000Z",
+  "isExpired": false
+}
+```
+
+### 2FA / Device Verification
+
+Wenn Kleinanzeigen eine Geräteverifizierung anfordert, gibt `/auth/login` folgende Response zurück:
+
+```json
+{
+  "status": "requires_email_verification",
+  "message": "Kleinanzeigen hat eine Geräteverifizierung angefordert",
+  "requiresEmailVerification": true,
+  "verificationReason": "2fa_new_device"
+}
+```
+
+**Workflow:**
+1. `/auth/login` → `requires_email_verification`
+2. `/oauth/verify-email` → Liest Email und klickt Bestätigungslink
+3. `/auth/login` → Jetzt erfolgreich
+
 ## Login Detection
 
 The API uses multiple methods to detect login status:

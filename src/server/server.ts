@@ -57,6 +57,9 @@ import {
 } from "../services/auth-status";
 import { CookieRefreshService } from "../services/cookies-auto-refresh";
 import { CookieValidator } from "../services/cookies-validation";
+import { EmailVerificationService } from "../services/email-verification";
+import { BrowserEmailVerificationService } from "../services/email-verification-browser";
+import { getOAuth2EmailService, loadTokens } from "../services/oauth2";
 import { TokenAnalyzer } from "../services/tokens-analyze";
 import { performLogin } from "../workers/auth-login";
 
@@ -120,6 +123,125 @@ app.post<{ Body: LoginRequestBody }>(
         status: "error",
         message:
           err instanceof Error ? err.message : "Login status check failed",
+      });
+    }
+  }
+);
+
+// POST /auth/verify-email - Automatically verify login via email
+app.post<{ Body: { email: string; emailPassword: string; timeout?: number } }>(
+  "/auth/verify-email",
+  {
+    schema: {
+      body: {
+        type: "object",
+        properties: {
+          email: { type: "string" },
+          emailPassword: { type: "string" },
+          timeout: { type: "number" },
+        },
+        required: ["email", "emailPassword"],
+        additionalProperties: false,
+      },
+    },
+  },
+  async (
+    request: FastifyRequest<{ Body: { email: string; emailPassword: string; timeout?: number } }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const { email, emailPassword, timeout = 60000 } = request.body;
+
+      console.log(`📧 Starting email verification for ${email}...`);
+
+      const verificationService = new EmailVerificationService({
+        email,
+        password: emailPassword,
+        timeout,
+      });
+
+      const result = await verificationService.verifyLogin();
+
+      if (result.success) {
+        return reply.send({
+          status: "verification_successful",
+          message: result.message,
+          verificationLink: result.verificationLink,
+          emailSubject: result.emailSubject,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        return reply.status(400).send({
+          status: "verification_failed",
+          message: result.message,
+          error: result.error,
+          verificationLink: result.verificationLink,
+          emailSubject: result.emailSubject,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (err) {
+      request.log.error({ err }, "email verification failed");
+      return reply.status(500).send({
+        status: "error",
+        message:
+          err instanceof Error ? err.message : "Email verification failed",
+      });
+    }
+  }
+);
+
+// POST /auth/verify-email-browser - Verify login via browser (for Microsoft/Outlook)
+app.post<{ Body: { email: string; emailPassword: string; timeout?: number } }>(
+  "/auth/verify-email-browser",
+  {
+    schema: {
+      body: {
+        type: "object",
+        properties: {
+          email: { type: "string" },
+          emailPassword: { type: "string" },
+          timeout: { type: "number" },
+        },
+        required: ["email", "emailPassword"],
+        additionalProperties: false,
+      },
+    },
+  },
+  async (
+    request: FastifyRequest<{ Body: { email: string; emailPassword: string; timeout?: number } }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const { email, emailPassword, timeout = 60000 } = request.body;
+
+      console.log(`🌐 Starting browser-based email verification for ${email}...`);
+
+      const verificationService = new BrowserEmailVerificationService();
+      const result = await verificationService.verifyLogin(email, emailPassword, timeout);
+
+      if (result.success) {
+        return reply.send({
+          status: "verification_successful",
+          message: result.message,
+          verificationLink: result.verificationLink,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        return reply.status(400).send({
+          status: "verification_failed",
+          message: result.message,
+          error: result.error,
+          verificationLink: result.verificationLink,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (err) {
+      request.log.error({ err }, "browser email verification failed");
+      return reply.status(500).send({
+        status: "error",
+        message:
+          err instanceof Error ? err.message : "Browser email verification failed",
       });
     }
   }
@@ -594,6 +716,239 @@ app.get<{ Params: { email: string } }>(
       return reply.status(500).send({
         status: "error",
         message: err instanceof Error ? err.message : "Token analysis failed",
+      });
+    }
+  }
+);
+
+// ============================================
+// OAUTH2 EMAIL VERIFICATION ENDPOINTS
+// ============================================
+
+// GET /oauth/microsoft/auth - Get Microsoft authorization URL
+app.get(
+  "/oauth/microsoft/auth",
+  async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { email } = request.query as { email?: string };
+      const oauth2Service = getOAuth2EmailService();
+      const authUrl = await oauth2Service.getMicrosoftAuthUrl(email);
+
+      return reply.send({
+        status: "success",
+        authUrl,
+        message: "Open this URL in a browser to authorize",
+        provider: "microsoft",
+      });
+    } catch (err) {
+      return reply.status(500).send({
+        status: "error",
+        message: err instanceof Error ? err.message : "Failed to get auth URL",
+        hint: "Make sure MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET are set in .env",
+      });
+    }
+  }
+);
+
+// GET /oauth/microsoft/callback - Handle Microsoft OAuth callback
+app.get(
+  "/oauth/microsoft/callback",
+  async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { code, error } = request.query as { code?: string; error?: string };
+
+      if (error) {
+        return reply.status(400).send({
+          status: "error",
+          message: `Authorization failed: ${error}`,
+        });
+      }
+
+      if (!code) {
+        return reply.status(400).send({
+          status: "error",
+          message: "No authorization code received",
+        });
+      }
+
+      const oauth2Service = getOAuth2EmailService();
+      const tokens = await oauth2Service.handleCallback("microsoft", code);
+
+      return reply.send({
+        status: "success",
+        message: "Microsoft authorization successful!",
+        email: tokens.email,
+        expiresAt: new Date(tokens.expiresAt).toISOString(),
+      });
+    } catch (err) {
+      return reply.status(500).send({
+        status: "error",
+        message: err instanceof Error ? err.message : "Callback failed",
+      });
+    }
+  }
+);
+
+// GET /oauth/gmail/auth - Get Gmail authorization URL
+app.get(
+  "/oauth/gmail/auth",
+  async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { email } = request.query as { email?: string };
+      const oauth2Service = getOAuth2EmailService();
+      const authUrl = oauth2Service.getGmailAuthUrl(email);
+
+      return reply.send({
+        status: "success",
+        authUrl,
+        message: "Open this URL in a browser to authorize",
+        provider: "gmail",
+      });
+    } catch (err) {
+      return reply.status(500).send({
+        status: "error",
+        message: err instanceof Error ? err.message : "Failed to get auth URL",
+        hint: "Make sure GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET are set in .env",
+      });
+    }
+  }
+);
+
+// GET /oauth/gmail/callback - Handle Gmail OAuth callback
+app.get(
+  "/oauth/gmail/callback",
+  async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { code, error } = request.query as { code?: string; error?: string };
+
+      if (error) {
+        return reply.status(400).send({
+          status: "error",
+          message: `Authorization failed: ${error}`,
+        });
+      }
+
+      if (!code) {
+        return reply.status(400).send({
+          status: "error",
+          message: "No authorization code received",
+        });
+      }
+
+      const oauth2Service = getOAuth2EmailService();
+      const tokens = await oauth2Service.handleCallback("gmail", code);
+
+      return reply.send({
+        status: "success",
+        message: "Gmail authorization successful!",
+        email: tokens.email,
+        expiresAt: new Date(tokens.expiresAt).toISOString(),
+      });
+    } catch (err) {
+      return reply.status(500).send({
+        status: "error",
+        message: err instanceof Error ? err.message : "Callback failed",
+      });
+    }
+  }
+);
+
+// POST /oauth/verify-email - Verify Kleinanzeigen email using OAuth2
+app.post<{ Body: { email: string; timeout?: number } }>(
+  "/oauth/verify-email",
+  {
+    schema: {
+      body: {
+        type: "object",
+        properties: {
+          email: { type: "string" },
+          timeout: { type: "number" },
+        },
+        required: ["email"],
+        additionalProperties: false,
+      },
+    },
+  },
+  async (
+    request: FastifyRequest<{ Body: { email: string; timeout?: number } }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const { email, timeout = 60000 } = request.body;
+
+      // Check if user has authorized
+      const tokens = loadTokens(email);
+      if (!tokens) {
+        return reply.status(400).send({
+          status: "not_authorized",
+          message: "Email not authorized - user needs to complete OAuth flow first",
+          microsoftAuthUrl: "/oauth/microsoft/auth?email=" + encodeURIComponent(email),
+          gmailAuthUrl: "/oauth/gmail/auth?email=" + encodeURIComponent(email),
+        });
+      }
+
+      console.log(`🔐 Starting OAuth2 email verification for ${email}...`);
+
+      const oauth2Service = getOAuth2EmailService();
+      const result = await oauth2Service.verifyKleinanzeigenEmail(email, timeout);
+
+      if (result.success) {
+        return reply.send({
+          status: "verification_successful",
+          message: result.message,
+          verificationLink: result.verificationLink,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        return reply.status(400).send({
+          status: "verification_failed",
+          message: result.message,
+          error: result.error,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (err) {
+      request.log.error({ err }, "OAuth email verification failed");
+      return reply.status(500).send({
+        status: "error",
+        message: err instanceof Error ? err.message : "OAuth email verification failed",
+      });
+    }
+  }
+);
+
+// GET /oauth/status/:email - Check OAuth authorization status
+app.get<{ Params: { email: string } }>(
+  "/oauth/status/:email",
+  async (
+    request: FastifyRequest<{ Params: { email: string } }>,
+    reply: FastifyReply
+  ) => {
+    try {
+      const { email } = request.params;
+      const tokens = loadTokens(email);
+
+      if (!tokens) {
+        return reply.send({
+          status: "not_authorized",
+          email,
+          authorized: false,
+          message: "No OAuth tokens found for this email",
+        });
+      }
+
+      return reply.send({
+        status: "authorized",
+        email,
+        authorized: true,
+        provider: tokens.provider,
+        expiresAt: new Date(tokens.expiresAt).toISOString(),
+        isExpired: Date.now() > tokens.expiresAt,
+      });
+    } catch (err) {
+      return reply.status(500).send({
+        status: "error",
+        message: err instanceof Error ? err.message : "Failed to check status",
       });
     }
   }

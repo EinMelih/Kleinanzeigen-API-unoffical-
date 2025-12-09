@@ -92,6 +92,13 @@ CHROME_WS_ENDPOINT=ws://localhost:9222/devtools/browser/...
 # Debug-Modus (optional)
 DEBUG=false
 LOG_LEVEL=info
+
+# OAuth2 für Email-Verifizierung (optional)
+# Siehe unten für Setup-Anleitung
+MICROSOFT_CLIENT_ID=
+MICROSOFT_CLIENT_SECRET=
+GMAIL_CLIENT_ID=
+GMAIL_CLIENT_SECRET=
 ```
 
 ### 2. Chrome Setup
@@ -101,6 +108,28 @@ Der API-Server startet Chrome automatisch mit Remote-Debugging:
 - **Debug-Port:** `9222`
 - **User-Data:** `C:\temp\chrome-debug`
 - **Modus:** Sichtbarer Browser (nicht headless)
+
+### 3. OAuth2 Setup (für automatische 2FA-Verifizierung)
+
+#### Microsoft (Outlook/Hotmail)
+
+1. Gehe zu [Azure Portal](https://portal.azure.com)
+2. **Azure Active Directory → App registrations → New registration**
+3. Name: "Kleinanzeigen API"
+4. Redirect URI: `http://localhost:87/oauth/microsoft/callback`
+5. Kopiere **Application (client) ID** → `MICROSOFT_CLIENT_ID`
+6. **Certificates & secrets → New client secret** → `MICROSOFT_CLIENT_SECRET`
+
+#### Gmail
+
+1. Gehe zu [Google Cloud Console](https://console.cloud.google.com)
+2. Neues Projekt erstellen oder vorhandenes auswählen
+3. **APIs & Services → Enable Gmail API**
+4. **APIs & Services → Credentials → Create OAuth Client ID**
+5. Application type: **Web application**
+6. Authorized redirect URIs: `http://localhost:87/oauth/gmail/callback`
+7. Kopiere **Client ID** → `GMAIL_CLIENT_ID`
+8. Kopiere **Client Secret** → `GMAIL_CLIENT_SECRET`
 
 ---
 
