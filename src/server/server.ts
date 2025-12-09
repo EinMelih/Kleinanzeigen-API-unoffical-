@@ -94,6 +94,17 @@ app.post<{ Body: LoginRequestBody }>(
           needsLogin: !result.loggedIn,
           cookieFile: result.cookieFile,
         });
+      } else if (result.requiresEmailVerification) {
+        // 2FA / Email Verification required
+        return reply.status(200).send({
+          status: "requires_email_verification",
+          message: result.message || "Email verification required - please confirm login in your email",
+          loggedIn: false,
+          needsLogin: true,
+          requiresEmailVerification: true,
+          verificationReason: result.verificationReason,
+          cookieFile: result.cookieFile,
+        });
       } else {
         return reply.status(400).send({
           status: "login_failed",
@@ -483,8 +494,8 @@ app.post(
         typeof interval === "string"
           ? parseFloat(interval)
           : typeof interval === "number"
-          ? interval
-          : 0.25;
+            ? interval
+            : 0.25;
 
       const refreshService = new CookieRefreshService();
       refreshService.startAutoRefresh(intervalHours);

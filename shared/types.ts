@@ -30,6 +30,9 @@ export interface LoginResult {
   cookieFile?: string;
   message?: string;
   error?: string;
+  // 2FA / Email Verification
+  requiresEmailVerification?: boolean;
+  verificationReason?: '2fa_new_device' | '2fa_new_ip' | '2fa_unknown' | undefined;
 }
 
 export interface LoginStatus {

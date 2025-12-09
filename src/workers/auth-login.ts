@@ -218,7 +218,7 @@ export async function performLogin(
         console.log("Error reading cookies, deleting corrupted file...");
         try {
           fs.unlinkSync(cookiePath);
-        } catch {}
+        } catch { }
       }
     }
 
@@ -307,7 +307,75 @@ export async function performLogin(
       console.log("Login form not found - might already be logged in");
     }
 
-    // Check login status using #user-email element as primary indicator
+    // ========================================
+    // 2FA / EMAIL VERIFICATION DETECTION
+    // ========================================
+    const twoFAResult = await page.evaluate(() => {
+      const bodyText = document.body.innerText || "";
+
+      // 2FA Indicators - texts that appear on the verification page
+      const twoFAIndicators = [
+        "Neue Anmeldung",
+        "bist du es",
+        "neues Gerät",
+        "neue IP-Adresse",
+        "E-Mail geschickt",
+        "bestätige uns den Login-Versuch",
+        "Nochmal versuchen",
+        "Login-Versuch in der E-Mail"
+      ];
+
+      // Check if any 2FA indicator is present
+      const has2FA = twoFAIndicators.some(indicator =>
+        bodyText.toLowerCase().includes(indicator.toLowerCase())
+      );
+
+      if (!has2FA) {
+        return { requires2FA: false };
+      }
+
+      // Determine the reason for 2FA
+      let reason: '2fa_new_device' | '2fa_new_ip' | '2fa_unknown' = '2fa_unknown';
+      if (bodyText.includes("neues Gerät")) {
+        reason = '2fa_new_device';
+      } else if (bodyText.includes("neue IP-Adresse")) {
+        reason = '2fa_new_ip';
+      }
+
+      return {
+        requires2FA: true,
+        reason,
+        message: "Kleinanzeigen hat eine Geräteverifizierung angefordert - bitte bestätige den Login in deiner E-Mail"
+      };
+    });
+
+    // If 2FA is required, return early with verification status
+    if (twoFAResult.requires2FA) {
+      console.log("⚠️ 2FA/Email verification required:", twoFAResult.reason);
+
+      // Still save cookies (might be partially valid)
+      const cookies = await page.cookies();
+      const cookiesDir = path.dirname(cookiePath);
+      if (!fs.existsSync(cookiesDir)) {
+        fs.mkdirSync(cookiesDir, { recursive: true });
+      }
+      fs.writeFileSync(cookiePath, JSON.stringify(cookies, null, 2));
+
+      return {
+        ok: false,
+        loggedIn: false,
+        didSubmit: true,
+        cookieFile: cookiePath,
+        requiresEmailVerification: true,
+        verificationReason: twoFAResult.reason,
+        message: twoFAResult.message || "Email verification required",
+        error: "2FA_REQUIRED"
+      };
+    }
+
+    // ========================================
+    // CHECK LOGIN STATUS
+    // ========================================
     let loggedIn = false;
     try {
       loggedIn = await page.evaluate((indicators) => {
@@ -337,7 +405,7 @@ export async function performLogin(
         // 2. Has login indicators AND login button is NOT visible
         return hasUserEmail || (hasLoginIndicators && !isLoginButtonVisible);
       }, LOGIN_CONFIG.LOGIN_INDICATORS);
-    } catch {}
+    } catch { }
 
     // Save cookies
     const cookies = await page.cookies();
