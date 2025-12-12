@@ -954,6 +954,150 @@ app.get<{ Params: { email: string } }>(
   }
 );
 
+// ============================================
+// SEARCH & SCRAPING ENDPOINTS
+// ============================================
+
+import { SearchScraper } from "../services/search-scraper";
+
+// POST /search - Search and scrape Kleinanzeigen articles
+app.post<{
+  Body: {
+    query: string;
+    count?: number;
+    location?: string;
+    radius?: number;
+    minPrice?: number;
+    maxPrice?: number;
+    sortBy?: "SORTING_DATE" | "PRICE_AMOUNT" | "RELEVANCE";
+    includeDetails?: boolean;
+  };
+}>(
+  "/search",
+  {
+    schema: {
+      body: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          count: { type: "number", minimum: 1, maximum: 100 },
+          location: { type: "string" },
+          radius: { type: "number" },
+          minPrice: { type: "number" },
+          maxPrice: { type: "number" },
+          sortBy: {
+            type: "string",
+            enum: ["SORTING_DATE", "PRICE_AMOUNT", "RELEVANCE"],
+          },
+          includeDetails: { type: "boolean" },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      },
+    },
+  },
+  async (request, reply) => {
+    try {
+      const {
+        query,
+        count = 10,
+        location,
+        radius,
+        minPrice,
+        maxPrice,
+        sortBy,
+        includeDetails = false,
+      } = request.body;
+
+      console.log(`🔍 Search request: "${query}" (${count} articles)`);
+
+      const scraper = new SearchScraper();
+      const result = await scraper.search({
+        query,
+        count,
+        location,
+        radius,
+        minPrice,
+        maxPrice,
+        sortBy,
+        includeDetails,
+      });
+
+      await scraper.disconnect();
+
+      if (result.success) {
+        return reply.send({
+          status: "success",
+          ...result,
+        });
+      } else {
+        return reply.status(400).send({
+          status: "error",
+          ...result,
+        });
+      }
+    } catch (err) {
+      request.log.error({ err }, "search failed");
+      return reply.status(500).send({
+        status: "error",
+        message: err instanceof Error ? err.message : "Search failed",
+      });
+    }
+  }
+);
+
+// GET /search - Quick search with query parameters
+app.get<{
+  Querystring: {
+    q: string;
+    count?: string;
+    location?: string;
+  };
+}>(
+  "/search",
+  async (request, reply) => {
+    try {
+      const { q, count = "10", location } = request.query;
+
+      if (!q) {
+        return reply.status(400).send({
+          status: "error",
+          message: "Query parameter 'q' is required",
+        });
+      }
+
+      console.log(`🔍 Quick search: "${q}" (${count} articles)`);
+
+      const scraper = new SearchScraper();
+      const result = await scraper.search({
+        query: q,
+        count: parseInt(count) || 10,
+        location,
+      });
+
+      await scraper.disconnect();
+
+      if (result.success) {
+        return reply.send({
+          status: "success",
+          ...result,
+        });
+      } else {
+        return reply.status(400).send({
+          status: "error",
+          ...result,
+        });
+      }
+    } catch (err) {
+      request.log.error({ err }, "search failed");
+      return reply.status(500).send({
+        status: "error",
+        message: err instanceof Error ? err.message : "Search failed",
+      });
+    }
+  }
+);
+
 // Import and register server controller
 import { serverController } from "../controllers/server-controller";
 

@@ -338,8 +338,119 @@ curl http://localhost:87/health
 | `POST` | `/server/start` | Chrome starten |
 | `POST` | `/server/stop` | Chrome stoppen |
 | `GET` | `/server/status` | Chrome-Status |
+| `POST` | `/search` | Artikel suchen & scrapen |
+| `GET` | `/search?q=...` | Schnellsuche mit Query |
 
 ---
+
+## 🔍 Suche & Scraping (`/search`)
+
+### 1. Artikel suchen (POST)
+**`POST /search`** - Sucht und scrapt Artikel von Kleinanzeigen
+
+```powershell
+# PowerShell - Einfache Suche
+$body = @{
+    query = "iPhone 15"
+    count = 5
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "http://localhost:87/search" `
+    -Method POST `
+    -Body $body `
+    -ContentType "application/json"
+```
+
+```powershell
+# PowerShell - Erweiterte Suche mit allen Optionen
+$body = @{
+    query = "MacBook Pro"
+    count = 10
+    location = "Berlin"
+    radius = 50
+    minPrice = 500
+    maxPrice = 2000
+    sortBy = "PRICE_AMOUNT"
+    includeDetails = $true
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "http://localhost:87/search" `
+    -Method POST `
+    -Body $body `
+    -ContentType "application/json"
+```
+
+```bash
+# cURL
+curl -X POST http://localhost:87/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"iPhone 15", "count": 5}'
+```
+
+| Parameter | Typ | Pflicht | Beschreibung |
+|-----------|-----|---------|--------------|
+| `query` | string | ✅ | Suchbegriff |
+| `count` | number | ❌ | Anzahl der Artikel (1-100, Standard: 10) |
+| `location` | string | ❌ | Standort (z.B. "Berlin", "München") |
+| `radius` | number | ❌ | Umkreis in km |
+| `minPrice` | number | ❌ | Minimaler Preis in € |
+| `maxPrice` | number | ❌ | Maximaler Preis in € |
+| `sortBy` | string | ❌ | Sortierung: `SORTING_DATE`, `PRICE_AMOUNT`, `RELEVANCE` |
+| `includeDetails` | boolean | ❌ | Holt zusätzlich Beschreibung & alle Bilder (langsamer) |
+
+**Beispiel-Response:**
+```json
+{
+  "status": "success",
+  "success": true,
+  "query": "iPhone 15",
+  "totalFound": 5,
+  "articlesScraped": 5,
+  "articles": [
+    {
+      "id": "2849163857",
+      "title": "iPhone 15 Pro 256GB Blau",
+      "price": "950 €",
+      "priceType": "negotiable",
+      "location": "10115 Berlin Mitte",
+      "date": "Heute, 14:32",
+      "url": "https://www.kleinanzeigen.de/s-anzeige/...",
+      "images": ["https://img.kleinanzeigen.de/..."],
+      "thumbnailUrl": "https://img.kleinanzeigen.de/...",
+      "seller": {
+        "name": "Max M.",
+        "type": "private"
+      }
+    }
+  ],
+  "searchUrl": "https://www.kleinanzeigen.de/s-suchanfrage.html?keywords=iPhone+15",
+  "scrapedAt": "2025-12-12T16:00:00.000Z"
+}
+```
+
+---
+
+### 2. Schnellsuche (GET)
+**`GET /search?q=...`** - Einfache Suche per URL-Parameter
+
+```powershell
+# PowerShell
+Invoke-RestMethod -Uri "http://localhost:87/search?q=PlayStation%205&count=3"
+```
+
+```bash
+# cURL
+curl "http://localhost:87/search?q=PlayStation%205&count=3"
+```
+
+| Parameter | Typ | Pflicht | Beschreibung |
+|-----------|-----|---------|--------------|
+| `q` | string | ✅ | Suchbegriff |
+| `count` | string | ❌ | Anzahl der Artikel (Standard: 10) |
+| `location` | string | ❌ | Standort |
+
+---
+
 
 ## 🔧 Typische Workflows
 
