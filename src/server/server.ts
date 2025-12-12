@@ -965,6 +965,7 @@ app.post<{
   Body: {
     query: string;
     count?: number;
+    scrapeAll?: boolean;
     location?: string;
     radius?: number;
     minPrice?: number;
@@ -980,7 +981,8 @@ app.post<{
         type: "object",
         properties: {
           query: { type: "string" },
-          count: { type: "number", minimum: 1, maximum: 100 },
+          count: { type: "number", minimum: 1 },
+          scrapeAll: { type: "boolean" },
           location: { type: "string" },
           radius: { type: "number" },
           minPrice: { type: "number" },
@@ -1001,6 +1003,7 @@ app.post<{
       const {
         query,
         count = 10,
+        scrapeAll = false,
         location,
         radius,
         minPrice,
@@ -1009,12 +1012,13 @@ app.post<{
         includeDetails = false,
       } = request.body;
 
-      console.log(`🔍 Search request: "${query}" (${count} articles)`);
+      console.log(`🔍 Search request: "${query}" (${scrapeAll ? "ALL" : count} articles)`);
 
       const scraper = new SearchScraper();
       const result = await scraper.search({
         query,
         count,
+        scrapeAll,
         location,
         radius,
         minPrice,

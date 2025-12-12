@@ -20,7 +20,9 @@ export interface SearchArticle {
 export interface SearchResult {
     success: boolean;
     query: string;
-    totalFound: number;
+    totalAvailable: number;
+    totalPages: number;
+    pagesScraped: number;
     articlesScraped: number;
     articles: SearchArticle[];
     searchUrl: string;
@@ -31,6 +33,7 @@ export interface SearchResult {
 export interface SearchOptions {
     query: string;
     count?: number | undefined;
+    scrapeAll?: boolean | undefined;
     location?: string | undefined;
     radius?: number | undefined;
     minPrice?: number | undefined;
@@ -80,48 +83,147 @@ export class SearchScraper {
         }
     }
 
-    private buildSearchUrl(options: SearchOptions): string {
-        const baseUrl = "https://www.kleinanzeigen.de/s-suchanfrage.html";
+    private buildSearchUrl(options: SearchOptions, page: number = 1): string {
+        // Kleinanzeigen URL structure:
+        // Seite 1: https://www.kleinanzeigen.de/s-{query}/k0
+        // Seite 2: https://www.kleinanzeigen.de/s-seite:2/{query}/k0
+        // Mit Preis: https://www.kleinanzeigen.de/s-preis:{min}:{max}/{query}/k0
+
+        const baseUrl = "https://www.kleinanzeigen.de";
+
+        // Query: replace spaces with hyphens, keep simple
+        const query = options.query.toLowerCase().replace(/\s+/g, "-");
+
+        // Build path parts (before query)
+        const pathParts: string[] = [];
+
+        // Add page if > 1
+        if (page > 1) {
+            pathParts.push(`seite:${page}`);
+        }
+
+        // Add price range if specified
+        if (options.minPrice !== undefined || options.maxPrice !== undefined) {
+            const min = options.minPrice ?? "";
+            const max = options.maxPrice ?? "";
+            pathParts.push(`preis:${min}:${max}`);
+        }
+
+        // Build the full path
+        let path: string;
+        if (pathParts.length > 0) {
+            // Format: /s-seite:2/query/k0 or /s-seite:2/preis:100:500/query/k0
+            path = `/s-${pathParts.join("/")}/${query}/k0`;
+        } else {
+            // Format: /s-query/k0
+            path = `/s-${query}/k0`;
+        }
+
+        // Build query params for location, radius, sorting
         const params = new URLSearchParams();
 
-        // Add search query
-        params.set("keywords", options.query);
-
-        // Add location if specified
         if (options.location) {
             params.set("locationStr", options.location);
         }
 
-        // Add radius if specified (in km)
         if (options.radius) {
             params.set("radius", options.radius.toString());
         }
 
-        // Add price range
-        if (options.minPrice !== undefined) {
-            params.set("minPrice", options.minPrice.toString());
-        }
-        if (options.maxPrice !== undefined) {
-            params.set("maxPrice", options.maxPrice.toString());
-        }
-
-        // Add sorting
         if (options.sortBy) {
             params.set("sortingField", options.sortBy);
         }
 
-        return `${baseUrl}?${params.toString()}`;
+        const queryString = params.toString();
+        const finalUrl = queryString ? `${baseUrl}${path}?${queryString}` : `${baseUrl}${path}`;
+
+        console.log(`  🔗 Built URL for page ${page}: ${finalUrl}`);
+        return finalUrl;
+    }
+
+    private async getTotalResults(page: Page): Promise<{ totalArticles: number; totalPages: number }> {
+        try {
+            const result = await page.evaluate(() => {
+                // Strategy 1: Look for pagination info like "Seite 1 von 50"
+                const paginationEl = document.querySelector('.pagination-current, [class*="pagination"]');
+                const paginationText = paginationEl?.textContent || "";
+                const pageMatch = paginationText.match(/von\s+(\d+)/i);
+                if (pageMatch && pageMatch[1]) {
+                    const totalPages = parseInt(pageMatch[1]) || 1;
+                    return { totalArticles: totalPages * 25, totalPages };
+                }
+
+                // Strategy 2: Count pagination links to find max page
+                const paginationLinks = document.querySelectorAll('.pagination-page, a[class*="pagination"]');
+                let maxPage = 1;
+                paginationLinks.forEach(link => {
+                    const pageNum = parseInt(link.textContent || "0");
+                    if (!isNaN(pageNum) && pageNum > maxPage) {
+                        maxPage = pageNum;
+                    }
+                });
+                if (maxPage > 1) {
+                    return { totalArticles: maxPage * 25, totalPages: maxPage };
+                }
+
+                // Strategy 3: Look for result count text like "1 - 25 von 12.345"
+                const resultElements = Array.from(document.querySelectorAll(
+                    '.resultlist-headline-count, .srp-headline, h1, [class*="result"], [class*="count"]'
+                ));
+                for (const el of resultElements) {
+                    const text = el.textContent || "";
+                    // Match patterns like "12.345 Ergebnisse" or "1 - 25 von 12.345"
+                    const vonMatch = text.match(/von\s+([\d\.]+)/i);
+                    if (vonMatch && vonMatch[1]) {
+                        const total = parseInt(vonMatch[1].replace(/\./g, "")) || 0;
+                        if (total > 0) {
+                            return { totalArticles: total, totalPages: Math.ceil(total / 25) };
+                        }
+                    }
+                    // Match "12.345 Anzeigen" or "12.345 Ergebnisse"
+                    const countMatch = text.match(/([\d\.]+)\s*(Anzeige|Ergebnis|Treffer)/i);
+                    if (countMatch && countMatch[1]) {
+                        const total = parseInt(countMatch[1].replace(/\./g, "")) || 0;
+                        if (total > 0) {
+                            return { totalArticles: total, totalPages: Math.ceil(total / 25) };
+                        }
+                    }
+                }
+
+                // Strategy 4: Fallback - count visible articles and assume more pages exist
+                const articles = document.querySelectorAll('article[data-adid], li.ad-listitem article, .aditem');
+                const hasNextPage = document.querySelector('a[class*="pagination-next"], a[title*="nächste"], .pagination-page');
+                if (articles.length >= 25 && hasNextPage) {
+                    // Assume at least 10 pages if we can't determine
+                    return { totalArticles: 250, totalPages: 10 };
+                }
+
+                return { totalArticles: articles.length, totalPages: 1 };
+            });
+
+            console.log(`  📊 Detected: ${result.totalArticles} articles across ${result.totalPages} pages`);
+            return result;
+        } catch (error) {
+            console.error("Could not get total results:", error);
+            return { totalArticles: 0, totalPages: 1 };
+        }
     }
 
     async search(options: SearchOptions): Promise<SearchResult> {
-        const count = options.count || 10;
+        const requestedCount = options.count || 10;
+        const scrapeAll = options.scrapeAll || false;
         const searchUrl = this.buildSearchUrl(options);
+        const articlesPerPage = 25;
 
         console.log(`🔍 Searching Kleinanzeigen for: "${options.query}"`);
-        console.log(`📊 Requested articles: ${count}`);
+        console.log(`📊 Requested articles: ${scrapeAll ? "ALL" : requestedCount}`);
         console.log(`🌐 Search URL: ${searchUrl}`);
 
         let page: Page | null = null;
+        const allArticles: SearchArticle[] = [];
+        let totalAvailable = 0;
+        let totalPages = 1;
+        let pagesScraped = 0;
 
         try {
             this.browser = await this.connectToBrowser();
@@ -135,7 +237,7 @@ export class SearchScraper {
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             );
 
-            // Navigate to search page
+            // Navigate to first search page
             console.log("🌐 Navigating to Kleinanzeigen...");
             await page.goto(searchUrl, {
                 waitUntil: "networkidle2",
@@ -153,10 +255,62 @@ export class SearchScraper {
                 console.log("⚠️ No results found or page structure changed");
             });
 
-            // Scrape the articles
-            const articles = await this.scrapeArticles(page, count, options.includeDetails || false);
+            // Get total results and pages
+            const totals = await this.getTotalResults(page);
+            totalAvailable = totals.totalArticles;
+            totalPages = totals.totalPages;
 
-            console.log(`✅ Successfully scraped ${articles.length} articles`);
+            console.log(`📈 Total available: ${totalAvailable} articles across ${totalPages} pages`);
+
+            // Calculate how many articles to scrape
+            const targetCount = scrapeAll ? totalAvailable : requestedCount;
+            const pagesToScrape = scrapeAll ? totalPages : Math.ceil(Math.min(targetCount, totalAvailable) / articlesPerPage);
+
+            console.log(`🎯 Will scrape up to ${targetCount} articles from ${pagesToScrape} pages`);
+
+            // Scrape pages
+            for (let currentPage = 1; currentPage <= pagesToScrape; currentPage++) {
+                try {
+                    // Navigate to page if not the first one
+                    if (currentPage > 1) {
+                        const pageUrl = this.buildSearchUrl(options, currentPage);
+                        console.log(`📄 Navigating to page ${currentPage}...`);
+                        await page.goto(pageUrl, {
+                            waitUntil: "domcontentloaded", // Faster than networkidle2
+                            timeout: 60000, // 60 seconds timeout
+                        });
+                        await this.wait(2000); // Wait for content to load
+                    }
+
+                    // How many more articles do we need?
+                    const remaining = targetCount - allArticles.length;
+                    const toScrapeThisPage = Math.min(remaining, articlesPerPage);
+
+                    // Scrape articles from current page
+                    const pageArticles = await this.scrapeArticlesFromPage(
+                        page,
+                        toScrapeThisPage,
+                        options.includeDetails || false,
+                        currentPage
+                    );
+
+                    allArticles.push(...pageArticles);
+                    pagesScraped++;
+
+                    console.log(`  ✅ Page ${currentPage}: Scraped ${pageArticles.length} articles (Total: ${allArticles.length})`);
+
+                    // Stop if we have enough articles or no more articles found
+                    if (allArticles.length >= targetCount || pageArticles.length === 0) {
+                        break;
+                    }
+                } catch (pageError) {
+                    console.error(`  ⚠️ Error on page ${currentPage}:`, pageError instanceof Error ? pageError.message : pageError);
+                    console.log(`  ℹ️ Continuing with ${allArticles.length} articles scraped so far`);
+                    break; // Stop pagination on error, return what we have
+                }
+            }
+
+            console.log(`✅ Successfully scraped ${allArticles.length} articles from ${pagesScraped} pages`);
 
             // Close the page (but keep browser connection)
             await page.close();
@@ -164,9 +318,11 @@ export class SearchScraper {
             return {
                 success: true,
                 query: options.query,
-                totalFound: articles.length,
-                articlesScraped: articles.length,
-                articles,
+                totalAvailable,
+                totalPages,
+                pagesScraped,
+                articlesScraped: allArticles.length,
+                articles: allArticles,
                 searchUrl,
                 scrapedAt: new Date().toISOString(),
             };
@@ -180,9 +336,11 @@ export class SearchScraper {
             return {
                 success: false,
                 query: options.query,
-                totalFound: 0,
-                articlesScraped: 0,
-                articles: [],
+                totalAvailable,
+                totalPages,
+                pagesScraped,
+                articlesScraped: allArticles.length,
+                articles: allArticles,
                 searchUrl,
                 scrapedAt: new Date().toISOString(),
                 error: error instanceof Error ? error.message : "Unknown error",
@@ -206,17 +364,18 @@ export class SearchScraper {
         }
     }
 
-    private async scrapeArticles(
+    private async scrapeArticlesFromPage(
         page: Page,
         count: number,
-        includeDetails: boolean
+        includeDetails: boolean,
+        pageNum: number
     ): Promise<SearchArticle[]> {
         const articles: SearchArticle[] = [];
 
         // Get all article elements
         const articleElements = await page.$$('article[data-adid], li.ad-listitem article, .aditem');
 
-        console.log(`📦 Found ${articleElements.length} articles on page`);
+        console.log(`  📦 Page ${pageNum}: Found ${articleElements.length} elements`);
 
         const articlesToProcess = Math.min(articleElements.length, count);
 
@@ -233,10 +392,9 @@ export class SearchScraper {
                         }
                     }
                     articles.push(article);
-                    console.log(`  📄 [${i + 1}/${articlesToProcess}] ${article.title}`);
                 }
             } catch (error) {
-                console.error(`  ⚠️ Failed to scrape article ${i + 1}:`, error);
+                console.error(`    ⚠️ Failed to scrape article ${i + 1}:`, error);
             }
         }
 

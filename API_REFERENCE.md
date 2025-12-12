@@ -390,7 +390,8 @@ curl -X POST http://localhost:87/search \
 | Parameter | Typ | Pflicht | Beschreibung |
 |-----------|-----|---------|--------------|
 | `query` | string | ✅ | Suchbegriff |
-| `count` | number | ❌ | Anzahl der Artikel (1-100, Standard: 10) |
+| `count` | number | ❌ | Anzahl der Artikel (Standard: 10) |
+| `scrapeAll` | boolean | ❌ | **NEU!** Alle verfügbaren Artikel scrapen |
 | `location` | string | ❌ | Standort (z.B. "Berlin", "München") |
 | `radius` | number | ❌ | Umkreis in km |
 | `minPrice` | number | ❌ | Minimaler Preis in € |
@@ -404,8 +405,10 @@ curl -X POST http://localhost:87/search \
   "status": "success",
   "success": true,
   "query": "iPhone 15",
-  "totalFound": 5,
-  "articlesScraped": 5,
+  "totalAvailable": 1234,
+  "totalPages": 50,
+  "pagesScraped": 2,
+  "articlesScraped": 50,
   "articles": [
     {
       "id": "2849163857",
