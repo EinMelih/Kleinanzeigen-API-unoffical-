@@ -2,12 +2,12 @@
   "name": "kleinanzeigen-api",
   "version": "1.0.0",
   "description": "Kleinanzeigen API with Chrome automation",
-  "main": "dist/server/server.js",
+  "main": "dist/server/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/src/server/server.js",
-    "dev": "ts-node src/server/server.ts",
-    "dev:watch": "nodemon --exec ts-node src/server/server.ts",
+    "start": "bun run src/server/index.ts",
+    "dev": "bun run src/server/index.ts",
+    "dev:watch": "nodemon --exec bun run src/server/index.ts",
     "clean": "rimraf dist"
   },
   "dependencies": {
