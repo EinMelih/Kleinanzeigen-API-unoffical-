@@ -4,6 +4,26 @@
 
 ---
 
+### [13.12.2024] - Such-Ordner & Dokumentation 📁
+
+- ✅ **Such-Ordner Struktur implementiert:**
+
+  - Bilder werden jetzt organisiert gespeichert in: `data/images/search/{Query}_{Ort}_{Radius}km_{Anzahl}pc_{Datum}/`
+  - Beispiel: `data/images/search/iPhone_15_Köln_70km_40pc_2024-12-13/`
+  - Response enthält `imageFolder` Pfad
+
+- ✅ **Bild-Deduplizierung:**
+
+  - Bilder werden anhand ihrer UUID dedupliziert
+  - Keine Thumbnails/Full-Size Duplikate mehr
+
+- ✅ **Dokumentation komplett überarbeitet:**
+  - `todos/SEARCH.md` neu geschrieben
+  - Junior-freundlich & kompakt
+  - Copy-Paste Beispiele
+
+---
+
 ### [12.12.2024] - Bild-Download & Scrape-Endpoint 📷
 
 - ✅ **Erstellt: `src/services/image-downloader.service.ts`**

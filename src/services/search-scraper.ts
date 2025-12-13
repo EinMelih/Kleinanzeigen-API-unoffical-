@@ -75,7 +75,7 @@ export class SearchScraper {
     } catch (error) {
       console.log("⚠️ Could not connect to existing Chrome, launching new...");
       return await puppeteer.launch({
-        headless: true,
+        headless: false,
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",

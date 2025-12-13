@@ -82,11 +82,20 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
 
           // Download images if requested
           if (downloadImages && result.articles) {
+            // Erstelle Such-Ordner Name
+            const searchFolder = ImageDownloader.createSearchFolderName({
+              query,
+              location,
+              radius,
+              count: scrapeAll ? result.articlesScraped : count,
+            });
+
             for (const article of result.articles) {
               if (article.images && article.images.length > 0) {
                 const downloaded = await imageDownloader.downloadImages({
                   articleId: article.id,
                   urls: article.images,
+                  searchFolder,
                 });
 
                 // Add downloaded paths to article
@@ -108,6 +117,14 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
             status: "success",
             result,
             imagesDownloaded: downloadImages,
+            imageFolder: downloadImages
+              ? `data/images/search/${ImageDownloader.createSearchFolderName({
+                  query,
+                  location,
+                  radius,
+                  count: scrapeAll ? result.articlesScraped : count,
+                })}`
+              : undefined,
             timestamp: new Date().toISOString(),
           });
         } finally {

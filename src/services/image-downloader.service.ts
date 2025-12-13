@@ -55,6 +55,12 @@ export interface ImageDownloadOptions {
 
   /** Max concurrent downloads */
   concurrency?: number;
+
+  /**
+   * Search folder name for organization
+   * Format: query_location_radius_count (e.g., "iPhone15_Koeln_70km_40pc")
+   */
+  searchFolder?: string;
 }
 
 // ============================================
@@ -63,16 +69,66 @@ export interface ImageDownloadOptions {
 
 export class ImageDownloader {
   /**
+   * Erstellt einen Such-Ordner Namen aus den Suchparametern
+   * Beispiel: "iPhone15_Koeln_70km_40pc_2024-12-13"
+   */
+  static createSearchFolderName(options: {
+    query: string;
+    location?: string | undefined;
+    radius?: number | undefined;
+    count?: number | undefined;
+  }): string {
+    const parts: string[] = [];
+
+    // Query bereinigen (Sonderzeichen entfernen)
+    const cleanQuery = options.query
+      .replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "_")
+      .replace(/_+/g, "_")
+      .substring(0, 30);
+    parts.push(cleanQuery);
+
+    // Location hinzufügen
+    if (options.location) {
+      const cleanLocation = options.location
+        .replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, "")
+        .substring(0, 20);
+      parts.push(cleanLocation);
+    }
+
+    // Radius hinzufügen
+    if (options.radius) {
+      parts.push(`${options.radius}km`);
+    }
+
+    // Count hinzufügen
+    if (options.count) {
+      parts.push(`${options.count}pc`);
+    }
+
+    // Datum hinzufügen
+    const date = new Date().toISOString().split("T")[0];
+    parts.push(date || "");
+
+    return parts.join("_");
+  }
+
+  /**
    * Downloads multiple images for an article
    */
   async downloadImages(
     options: ImageDownloadOptions
   ): Promise<DownloadedImage[]> {
-    const { articleId, urls, skipExisting = true } = options;
+    const { articleId, urls, skipExisting = true, searchFolder } = options;
     const results: DownloadedImage[] = [];
 
-    // Create article folder
-    const articleDir = path.join(IMAGE_DIR, articleId);
+    // Create folder structure: data/images/[searchFolder]/[articleId]/
+    let articleDir: string;
+    if (searchFolder) {
+      articleDir = path.join(IMAGE_DIR, "search", searchFolder, articleId);
+    } else {
+      articleDir = path.join(IMAGE_DIR, articleId);
+    }
+
     if (!fs.existsSync(articleDir)) {
       fs.mkdirSync(articleDir, { recursive: true });
     }
