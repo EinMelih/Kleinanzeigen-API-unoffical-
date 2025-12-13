@@ -96,6 +96,13 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                   articleId: article.id,
                   urls: article.images,
                   searchFolder,
+                  articleInfo: {
+                    id: article.id,
+                    title: article.title,
+                    price: article.price,
+                    location: article.location,
+                    url: article.url,
+                  },
                 });
 
                 // Add downloaded paths to article
@@ -174,11 +181,25 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
 
         // Download images if requested
         if (shouldDownload && result.articles) {
+          const searchFolder = ImageDownloader.createSearchFolderName({
+            query: q,
+            location,
+            count: parseInt(count) || 10,
+          });
+
           for (const article of result.articles) {
             if (article.images && article.images.length > 0) {
               const downloaded = await imageDownloader.downloadImages({
                 articleId: article.id,
                 urls: article.images,
+                searchFolder,
+                articleInfo: {
+                  id: article.id,
+                  title: article.title,
+                  price: article.price,
+                  location: article.location,
+                  url: article.url,
+                },
               });
 
               (
@@ -402,9 +423,23 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
               let downloadedImages: Array<{ url: string; localPath: string }> =
                 [];
               if (downloadImages && articleData.images.length > 0) {
+                // Erstelle Ordner für Scrape-Requests
+                const scrapeFolder = `scrape_${
+                  new Date().toISOString().split("T")[0]
+                }`;
+
                 const downloaded = await imageDownloader.downloadImages({
                   articleId: articleData.id || `article_${Date.now()}`,
                   urls: articleData.images,
+                  searchFolder: scrapeFolder,
+                  articleInfo: {
+                    id: articleData.id || `unknown_${Date.now()}`,
+                    title: articleData.title,
+                    price: articleData.price,
+                    location: articleData.location,
+                    url: url,
+                    sellerName: articleData.seller.name,
+                  },
                 });
 
                 downloadedImages = downloaded

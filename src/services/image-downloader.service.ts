@@ -43,6 +43,21 @@ export interface DownloadedImage {
   error?: string;
 }
 
+export interface ArticleInfo {
+  /** Artikel-ID */
+  id: string;
+  /** Titel der Anzeige */
+  title?: string;
+  /** Preis */
+  price?: string;
+  /** Standort */
+  location?: string;
+  /** URL zur Anzeige */
+  url?: string;
+  /** Verkäufer-Name */
+  sellerName?: string;
+}
+
 export interface ImageDownloadOptions {
   /** Article ID (for folder organization) */
   articleId: string;
@@ -61,6 +76,11 @@ export interface ImageDownloadOptions {
    * Format: query_location_radius_count (e.g., "iPhone15_Koeln_70km_40pc")
    */
   searchFolder?: string;
+
+  /**
+   * Artikel-Informationen für article-info.json
+   */
+  articleInfo?: ArticleInfo;
 }
 
 // ============================================
@@ -113,24 +133,62 @@ export class ImageDownloader {
   }
 
   /**
+   * Erstellt einen Artikel-Ordner Namen aus Titel + ID
+   * Beispiel: "iPhone_15_Pro_256GB_123456789"
+   */
+  static createArticleFolderName(id: string, title?: string): string {
+    if (!title) return id;
+
+    const cleanTitle = title
+      .replace(/[^a-zA-Z0-9äöüÄÖÜß\s]/g, "")
+      .replace(/\s+/g, "_")
+      .substring(0, 40);
+
+    return `${cleanTitle}_${id}`;
+  }
+
+  /**
    * Downloads multiple images for an article
    */
   async downloadImages(
     options: ImageDownloadOptions
   ): Promise<DownloadedImage[]> {
-    const { articleId, urls, skipExisting = true, searchFolder } = options;
+    const {
+      articleId,
+      urls,
+      skipExisting = true,
+      searchFolder,
+      articleInfo,
+    } = options;
     const results: DownloadedImage[] = [];
 
-    // Create folder structure: data/images/[searchFolder]/[articleId]/
+    // Erstelle Ordnername aus Titel + ID
+    const folderName = ImageDownloader.createArticleFolderName(
+      articleId,
+      articleInfo?.title
+    );
+
+    // Create folder structure: data/images/[searchFolder]/[folderName]/
     let articleDir: string;
     if (searchFolder) {
-      articleDir = path.join(IMAGE_DIR, "search", searchFolder, articleId);
+      articleDir = path.join(IMAGE_DIR, "search", searchFolder, folderName);
     } else {
-      articleDir = path.join(IMAGE_DIR, articleId);
+      articleDir = path.join(IMAGE_DIR, folderName);
     }
 
     if (!fs.existsSync(articleDir)) {
       fs.mkdirSync(articleDir, { recursive: true });
+    }
+
+    // Speichere article-info.json wenn Infos vorhanden
+    if (articleInfo) {
+      const infoPath = path.join(articleDir, "article-info.json");
+      const infoData = {
+        ...articleInfo,
+        downloadedAt: new Date().toISOString(),
+        imageCount: urls.length,
+      };
+      fs.writeFileSync(infoPath, JSON.stringify(infoData, null, 2));
     }
 
     for (let i = 0; i < urls.length; i++) {
