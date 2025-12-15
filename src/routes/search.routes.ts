@@ -290,12 +290,28 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                 timeout: 30000,
               });
 
+              // Scroll um Lazy-Loading zu triggern
+              await page.evaluate(() => {
+                window.scrollTo(0, 300);
+              });
+
+              // Warte auf Bilder-Laden
+              await new Promise((resolve) => setTimeout(resolve, 2000));
+
               // Extract article data
               const articleData = await page.evaluate(() => {
-                const title =
+                // Titel bereinigen - Status-Badges entfernen
+                let rawTitle =
                   document
                     .querySelector("#viewad-title")
                     ?.textContent?.trim() || "";
+                // Remove "Reserviert", "Gelöscht", bullets and clean whitespace
+                const title = rawTitle
+                  .replace(/Reserviert\s*[•·]?\s*/gi, "")
+                  .replace(/Gelöscht\s*[•·]?\s*/gi, "")
+                  .replace(/[•·]\s*/g, "")
+                  .replace(/\s+/g, " ")
+                  .trim();
                 const price =
                   document
                     .querySelector("#viewad-price")
@@ -308,61 +324,67 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                   document
                     .querySelector("#viewad-locality")
                     ?.textContent?.trim() || "";
-                const date =
-                  document
-                    .querySelector("#viewad-extra-info")
-                    ?.textContent?.trim() || "";
 
-                // Get all images - ONLY from the article gallery, not from related articles
+                // Datum: nur das erste Element (nicht Aufrufe-Zahl)
+                const dateEl = document.querySelector(
+                  "#viewad-extra-info span, #viewad-extra-info li:first-child"
+                );
+                const date = dateEl?.textContent?.trim() || "";
+
+                // Get all images - ONLY from the article gallery
                 const images: string[] = [];
                 const seenImageIds = new Set<string>();
 
                 // Hilfsfunktion: Extrahiere Bild-ID aus URL
                 const getImageId = (url: string): string => {
-                  // URLs wie: .../images/fd/fd545056-0af4-44f5-aab8-167e316fe6d7?rule=...
                   const match = url.match(
                     /images\/([a-f0-9]{2})\/([a-f0-9-]+)/i
                   );
                   return match && match[2] ? match[2] : url;
                 };
 
-                // WICHTIG: Nur Bilder aus dem Haupt-Artikel-Container!
-                const articleContainer = document.querySelector(
-                  "#viewad-product, #viewad-gallery, .ad-keydetails"
-                );
-
-                if (articleContainer) {
-                  articleContainer.querySelectorAll("img").forEach((img) => {
-                    const src =
+                // 1. Versuche Thumbnails aus der Galerie-Leiste (sind meistens alle geladen)
+                document
+                  .querySelectorAll(
+                    ".galleryitem img, " +
+                      ".gallery-thumbnail img, " +
+                      "[data-testid='gallery-thumbnails'] img, " +
+                      ".imagebox-thumbnail img"
+                  )
+                  .forEach((img) => {
+                    // Hole die große Version der URL (ersetze $_ mit $_59 für größere Bilder)
+                    let src =
                       img.getAttribute("src") ||
                       img.getAttribute("data-src") ||
                       img.getAttribute("data-imgsrc");
                     if (src && src.includes("kleinanzeigen.de")) {
+                      // Upgrade zu größerer Version wenn möglich
+                      src = src.replace(/\$_\d+\./, "$_59.");
                       const imageId = getImageId(src);
-                      // Nur hinzufügen wenn diese Bild-ID noch nicht gesehen wurde
                       if (
                         !seenImageIds.has(imageId) &&
                         !src.includes("placeholder") &&
-                        !src.includes("avatar") &&
-                        !src.includes("icon")
+                        !src.includes("avatar")
                       ) {
                         seenImageIds.add(imageId);
                         images.push(src);
                       }
                     }
                   });
-                }
 
-                // Falls keine Bilder gefunden, versuche spezifischeren Selektor
+                // 2. Falls keine Thumbnails, versuche Hauptbild + Gallery Container
                 if (images.length === 0) {
                   document
                     .querySelectorAll(
-                      "#viewad-image img, .galleryimage-element img"
+                      "#viewad-image img, " +
+                        "#viewad-gallery img, " +
+                        ".galleryimage-element img, " +
+                        "[data-testid='gallery'] img"
                     )
                     .forEach((img) => {
                       const src =
                         img.getAttribute("src") || img.getAttribute("data-src");
-                      if (src) {
+                      if (src && src.includes("kleinanzeigen.de")) {
                         const imageId = getImageId(src);
                         if (
                           !seenImageIds.has(imageId) &&
@@ -375,7 +397,7 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                     });
                 }
 
-                // Fallback: OG-Image
+                // 3. Fallback: OG-Image
                 if (images.length === 0) {
                   const ogImage = document.querySelector(
                     'meta[property="og:image"]'
@@ -386,10 +408,12 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                   }
                 }
 
-                // Get seller info
+                // Get seller info - EXTENDED
                 const sellerName =
                   document
-                    .querySelector("#viewad-contact .text-body-regular-strong")
+                    .querySelector(
+                      "#viewad-contact .text-body-regular-strong, #viewad-contact .userprofile-vip a"
+                    )
                     ?.textContent?.trim() || "";
                 const sellerLink =
                   document
@@ -398,9 +422,77 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                     )
                     ?.getAttribute("href") || "";
 
-                // Extract ID from URL
-                const urlMatch = window.location.pathname.match(/\/(\d+)$/);
-                const id = urlMatch ? urlMatch[1] : "";
+                // User ID aus Link extrahieren
+                const userIdMatch = sellerLink.match(/userId=(\d+)/);
+                const sellerId =
+                  userIdMatch && userIdMatch[1] ? userIdMatch[1] : "";
+
+                // Telefonnummer
+                const phoneLink = document.querySelector(
+                  "#viewad-contact a[href^='tel:']"
+                );
+                const phone = phoneLink
+                  ? phoneLink.getAttribute("href")?.replace("tel:", "") || ""
+                  : "";
+
+                // Seller-Typ (gewerblich/privat) - check via text
+                const contactSection =
+                  document.querySelector("#viewad-contact");
+                const contactText = contactSection?.textContent || "";
+                const isCommercial =
+                  contactText.includes("Gewerblicher Nutzer") ||
+                  contactText.includes("Gewerblicher Anbieter") ||
+                  document.querySelector(
+                    ".badge-hint-pro-small, .icon-user-commercial"
+                  ) !== null;
+
+                // Badges - extract from .userbadge-tag elements
+                const badges: string[] = [];
+                document
+                  .querySelectorAll(".userbadge-tag, [class*='userbadge'] span")
+                  .forEach((badge) => {
+                    const text = badge.textContent?.trim().toLowerCase() || "";
+                    if (
+                      text.includes("zufriedenheit") ||
+                      text.includes("top")
+                    ) {
+                      if (!badges.includes("TOP_SATISFACTION"))
+                        badges.push("TOP_SATISFACTION");
+                    }
+                    if (text.includes("freundlich")) {
+                      if (!badges.includes("FRIENDLY")) badges.push("FRIENDLY");
+                    }
+                    if (text.includes("zuverlässig")) {
+                      if (!badges.includes("RELIABLE")) badges.push("RELIABLE");
+                    }
+                    if (text.includes("verifiziert")) {
+                      if (!badges.includes("VERIFIED")) badges.push("VERIFIED");
+                    }
+                  });
+
+                // Aktiv seit
+                const activeSinceEl = document.querySelector(
+                  ".userprofile-vip-since, [data-testid='member-since']"
+                );
+                const activeSince =
+                  activeSinceEl?.textContent
+                    ?.replace("Aktiv seit", "")
+                    .trim() || "";
+
+                // Anzahl Anzeigen
+                const totalAdsEl = document.querySelector(
+                  ".userprofile-vip-ads, [data-testid='ad-count']"
+                );
+                const totalAdsMatch = totalAdsEl?.textContent?.match(/(\d+)/);
+                const totalAds =
+                  totalAdsMatch && totalAdsMatch[1]
+                    ? parseInt(totalAdsMatch[1])
+                    : 0;
+
+                // Extract ID from URL - Format: /.../3200961604-280-1773
+                const urlMatch =
+                  window.location.pathname.match(/\/(\d+)-\d+-\d+$/);
+                const id = urlMatch && urlMatch[1] ? urlMatch[1] : "";
 
                 return {
                   id,
@@ -412,6 +504,14 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                   images,
                   seller: {
                     name: sellerName,
+                    id: sellerId,
+                    type: (isCommercial ? "commercial" : "private") as
+                      | "commercial"
+                      | "private",
+                    phone: phone || undefined,
+                    badges,
+                    activeSince: activeSince || undefined,
+                    totalAds: totalAds || undefined,
                     profileUrl: sellerLink,
                   },
                 };
@@ -438,7 +538,9 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                     price: articleData.price,
                     location: articleData.location,
                     url: url,
-                    sellerName: articleData.seller.name,
+                    description: articleData.description,
+                    date: articleData.date,
+                    seller: articleData.seller,
                   },
                 });
 

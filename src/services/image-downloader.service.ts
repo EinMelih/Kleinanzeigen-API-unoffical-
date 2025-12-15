@@ -54,8 +54,21 @@ export interface ArticleInfo {
   location?: string;
   /** URL zur Anzeige */
   url?: string;
-  /** Verkäufer-Name */
-  sellerName?: string;
+  /** Beschreibung */
+  description?: string;
+  /** Erstellungsdatum */
+  date?: string;
+  /** Verkäufer-Infos */
+  seller?: {
+    name?: string | undefined;
+    id?: string | undefined;
+    type?: "commercial" | "private" | undefined;
+    phone?: string | undefined;
+    badges?: string[] | undefined;
+    activeSince?: string | undefined;
+    totalAds?: number | undefined;
+    profileUrl?: string | undefined;
+  };
 }
 
 export interface ImageDownloadOptions {
