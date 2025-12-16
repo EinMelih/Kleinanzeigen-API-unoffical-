@@ -4,6 +4,69 @@
 
 ---
 
+### [16.12.2024] - Article Endpoint & Endpoint Tests ✅
+
+- ✅ **Neuer Endpoint: `GET /article/:id`**
+
+  - Scrapt einzelnen Artikel anhand ID
+  - `?download=true` für Bild-Download
+  - Vollständige Seller-Daten (ratingText, activeSince, activeListings)
+
+- ✅ **Endpoint Tests durchgeführt:**
+
+  | Endpoint | Status |
+  |----------|--------|
+  | `GET /article/:id` | ✅ Funktioniert |
+  | `GET /article/:id?download=true` | ✅ Funktioniert |
+  | `GET /search?q=...` | ✅ Funktioniert |
+  | `POST /search` mit `includeDetails` | ✅ Funktioniert |
+  | `POST /scrape` | ⚠️ Chrome-Timeout |
+
+- ✅ **Ordnerstruktur in `data/images/search/`:**
+  ```
+  article_{ID}_{DATUM}/
+  └── {Titel}_{ID}/
+      ├── article-info.json
+      └── image_X.jpg
+  ```
+
+---
+
+
+- ✅ **SearchParser & SearchScraper Refactoring:**
+
+  - `SearchScraper` nutzt jetzt `SearchParser` für Seller-Infos (modular!)
+  - Keine duplizierte Seller-Logik mehr
+  - `scrapeArticleDetails()` holt jetzt vollständige Seller-Daten
+
+- ✅ **Erweiterte Seller-Informationen (`search-parser.service.ts`):**
+
+  - Neue Helper-Methoden hinzugefügt:
+    - `extractRatingText()` - "Freundlich", "OK Zufriedenheit", "TOP Zufriedenheit"
+    - `extractMemberSince()` - "Aktiv seit DD.MM.YYYY"
+    - `extractResponseTime()` - "Antwortet innerhalb von X Stunden"
+    - `extractFollowerCount()` - Follower-Anzahl
+    - `extractActiveListingsFromAllAdsLink()` - Anzahl aktiver Anzeigen
+
+- ✅ **Types erweitert (`search.types.ts`):**
+
+  - `ratingText` zu `SellerInfo` Interface hinzugefügt
+  - Alle optionalen Felder mit `| undefined` für exactOptionalPropertyTypes
+
+- 📋 **Seller-Daten die jetzt gescraped werden:**
+
+  | Feld | Beispiel |
+  |------|----------|
+  | `name` | "R. Khal" |
+  | `rating` | `friendly` / `ok` |
+  | `ratingText` | "Freundlich" / "OK Zufriedenheit" |
+  | `memberSince` | "28.01.2021" |
+  | `responseTime` | "Antwortet in der Regel innerhalb von 1 Stunde" |
+  | `followerCount` | 1 |
+  | `activeListings` | 5 |
+
+---
+
 ### [13.12.2024] - Such-Ordner & Dokumentation 📁
 
 - ✅ **Such-Ordner Struktur implementiert:**

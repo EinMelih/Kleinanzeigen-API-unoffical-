@@ -437,6 +437,9 @@ export interface SellerInfo {
    */
   rating?: SellerRating | undefined;
 
+  /** Lesbarer Rating-Text (z.B. "Freundlich", "OK Zufriedenheit", "TOP Zufriedenheit") */
+  ratingText?: string | undefined;
+
   /** Anzahl Bewertungen */
   ratingCount?: number;
 
@@ -456,13 +459,13 @@ export interface SellerInfo {
   responseRate?: string;
 
   /** Durchschnittliche Antwortzeit (z.B. "< 1 Stunde") */
-  responseTime?: string;
+  responseTime?: string | undefined;
 
   /**
    * Follower-Anzahl (falls Pro/Shop)
    * CSS: [data-testid="follower-count"]
    */
-  followerCount?: number;
+  followerCount?: number | undefined;
 }
 
 /**

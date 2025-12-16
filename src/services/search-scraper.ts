@@ -1,5 +1,11 @@
 import puppeteer, { Browser, Page } from "puppeteer";
+import { SearchParser } from "./search-parser.service";
+import { SellerInfo } from "../types/search.types";
 
+/**
+ * Einfaches Artikel-Interface für den Scraper
+ * Nutzt SellerInfo aus den zentralen Types für erweiterte Seller-Daten
+ */
 export interface SearchArticle {
   id: string;
   title: string;
@@ -11,12 +17,7 @@ export interface SearchArticle {
   images: string[];
   thumbnailUrl: string;
   description?: string;
-  seller:
-    | {
-        name: string;
-        type: string;
-      }
-    | undefined;
+  seller?: SellerInfo;
 }
 
 export interface SearchResult {
@@ -373,7 +374,7 @@ export class SearchScraper {
       console.error("❌ Search failed:", error);
 
       if (page) {
-        await page.close().catch(() => {});
+        await page.close().catch(() => { });
       }
 
       return {
@@ -430,13 +431,17 @@ export class SearchScraper {
       try {
         const article = await this.scrapeArticleFromElement(page, i);
         if (article) {
-          // Optionally fetch full details (slower)
+          // Optionally fetch full details including seller info (slower)
           if (includeDetails && article.url) {
             const details = await this.scrapeArticleDetails(page, article.url);
             if (details) {
               article.description = details.description;
               article.images =
                 details.images.length > 0 ? details.images : article.images;
+              // Seller-Info aus dem Parser hinzufügen
+              if (details.seller) {
+                article.seller = details.seller;
+              }
             }
           }
           articles.push(article);
@@ -513,14 +518,8 @@ export class SearchScraper {
         const thumbnailUrl =
           imgEl?.src || imgEl?.getAttribute("data-src") || "";
 
-        // Get seller info if available
-        const sellerEl = el.querySelector(
-          '.aditem-details--seller, [class*="seller"]'
-        );
-        const sellerName = sellerEl?.textContent?.trim() || "";
-        const sellerType = sellerEl?.classList.contains("commercial")
-          ? "commercial"
-          : "private";
+        // Seller-Infos werden in scrapeArticleDetails mit dem Parser geholt
+        // Hier nur Basis-Daten zurückgeben
 
         return {
           id,
@@ -532,9 +531,7 @@ export class SearchScraper {
           url,
           images: thumbnailUrl ? [thumbnailUrl] : [],
           thumbnailUrl,
-          seller: sellerName
-            ? { name: sellerName, type: sellerType }
-            : undefined,
+          // seller wird später in scrapeArticleDetails gefüllt
         };
       }, index);
 
@@ -548,8 +545,9 @@ export class SearchScraper {
   private async scrapeArticleDetails(
     _page: Page,
     articleUrl: string
-  ): Promise<{ description: string; images: string[] } | null> {
+  ): Promise<{ description: string; images: string[]; seller?: SellerInfo | undefined } | null> {
     let detailPage: Page | null = null;
+    const parser = new SearchParser();
 
     try {
       detailPage = await this.browser!.newPage();
@@ -599,12 +597,18 @@ export class SearchScraper {
         return { description, images };
       });
 
+      // Seller-Info mit dem Parser holen (modular!)
+      const seller = await parser.parseSellerInfo(detailPage);
+
       await detailPage.close();
-      return details;
+      return {
+        ...details,
+        seller: seller || undefined,
+      };
     } catch (error) {
       console.error("Error fetching article details:", error);
       if (detailPage) {
-        await detailPage.close().catch(() => {});
+        await detailPage.close().catch(() => { });
       }
       return null;
     }

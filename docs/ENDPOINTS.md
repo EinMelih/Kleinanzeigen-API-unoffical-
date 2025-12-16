@@ -170,14 +170,40 @@ data/images/search/{Query}_{Ort}_{Radius}km_{Count}pc_{Datum}/
 
 ---
 
-## � Hinweis
+## 📦 Single Article Endpoint
 
-**`/article/:id` ist nicht nötig** - `/scrape` kann einzelne Artikel scrapen:
+### `GET /article/:id`
+
+Scrapt einen einzelnen Artikel anhand seiner ID.
+
+```
+GET /article/3274784731?download=true
+```
+
+| Parameter  | Typ    | Pflicht | Default | Beschreibung |
+| ---------- | ------ | ------- | ------- | ------------ |
+| `id`       | string | ✅      | -       | Artikel-ID   |
+| `download` | string | ❌      | false   | Bilder lokal speichern |
+
+**Response enthält erweiterte Seller-Infos:**
 
 ```json
-POST /scrape
 {
-  "urls": ["https://www.kleinanzeigen.de/s-anzeige/iphone-15/123456789-173"],
-  "downloadImages": true
+  "status": "success",
+  "article": {
+    "id": "3274784731",
+    "title": "Twistshake Reisebuggy...",
+    "price": "200 € VB",
+    "seller": {
+      "name": "R. Khal",
+      "id": "81987118",
+      "type": "private",
+      "badges": ["TOP_SATISFACTION"],
+      "ratingText": "Freundlich",
+      "activeSince": "28.01.2021",
+      "responseTime": "Antwortet in der Regel innerhalb von 1 Stunde",
+      "followerCount": 1
+    }
+  }
 }
 ```

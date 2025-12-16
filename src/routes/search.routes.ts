@@ -126,11 +126,11 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
             imagesDownloaded: downloadImages,
             imageFolder: downloadImages
               ? `data/images/search/${ImageDownloader.createSearchFolderName({
-                  query,
-                  location,
-                  radius,
-                  count: scrapeAll ? result.articlesScraped : count,
-                })}`
+                query,
+                location,
+                radius,
+                count: scrapeAll ? result.articlesScraped : count,
+              })}`
               : undefined,
             timestamp: new Date().toISOString(),
           });
@@ -347,9 +347,9 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                 document
                   .querySelectorAll(
                     ".galleryitem img, " +
-                      ".gallery-thumbnail img, " +
-                      "[data-testid='gallery-thumbnails'] img, " +
-                      ".imagebox-thumbnail img"
+                    ".gallery-thumbnail img, " +
+                    "[data-testid='gallery-thumbnails'] img, " +
+                    ".imagebox-thumbnail img"
                   )
                   .forEach((img) => {
                     // Hole die große Version der URL (ersetze $_ mit $_59 für größere Bilder)
@@ -377,9 +377,9 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                   document
                     .querySelectorAll(
                       "#viewad-image img, " +
-                        "#viewad-gallery img, " +
-                        ".galleryimage-element img, " +
-                        "[data-testid='gallery'] img"
+                      "#viewad-gallery img, " +
+                      ".galleryimage-element img, " +
+                      "[data-testid='gallery'] img"
                     )
                     .forEach((img) => {
                       const src =
@@ -470,28 +470,73 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                     }
                   });
 
-                // Aktiv seit
-                const activeSinceEl = document.querySelector(
-                  ".userprofile-vip-since, [data-testid='member-since']"
+                // Aktiv seit - auch aus contactText extrahieren
+                let activeSince: string | undefined;
+                const activeSinceMatch = contactText.match(
+                  /Aktiv seit\s+(\d{2}\.\d{2}\.\d{4})/i
                 );
-                const activeSince =
-                  activeSinceEl?.textContent
-                    ?.replace("Aktiv seit", "")
-                    .trim() || "";
+                if (activeSinceMatch && activeSinceMatch[1]) {
+                  activeSince = activeSinceMatch[1];
+                } else {
+                  const activeSinceEl = document.querySelector(
+                    ".userprofile-vip-since, [data-testid='member-since']"
+                  );
+                  activeSince =
+                    activeSinceEl?.textContent
+                      ?.replace("Aktiv seit", "")
+                      .trim() || undefined;
+                }
 
-                // Anzahl Anzeigen
-                const totalAdsEl = document.querySelector(
-                  ".userprofile-vip-ads, [data-testid='ad-count']"
+                // Anzahl Anzeigen - aus contactText oder Element
+                let activeListings: number | undefined;
+                const activeListingsMatch = contactText.match(
+                  /(\d+)\s*Anzeigen?\s*(online)?/i
                 );
-                const totalAdsMatch = totalAdsEl?.textContent?.match(/(\d+)/);
-                const totalAds =
-                  totalAdsMatch && totalAdsMatch[1]
-                    ? parseInt(totalAdsMatch[1])
-                    : 0;
+                if (activeListingsMatch && activeListingsMatch[1]) {
+                  activeListings = parseInt(activeListingsMatch[1]);
+                } else {
+                  const totalAdsEl = document.querySelector(
+                    ".userprofile-vip-ads, [data-testid='ad-count']"
+                  );
+                  const totalAdsMatch = totalAdsEl?.textContent?.match(/(\d+)/);
+                  activeListings =
+                    totalAdsMatch && totalAdsMatch[1]
+                      ? parseInt(totalAdsMatch[1])
+                      : undefined;
+                }
 
-                // Extract ID from URL - Format: /.../3200961604-280-1773
+                // Rating text (Freundlich, OK Zufriedenheit, etc.)
+                const ratingText = (() => {
+                  const possibleTexts = [
+                    "Freundlich",
+                    "OK Zufriedenheit",
+                    "TOP Zufriedenheit",
+                  ];
+                  for (const t of possibleTexts) {
+                    if (contactText.includes(t)) return t;
+                  }
+                  return undefined;
+                })();
+
+                // Antwortzeit
+                const responseTimeMatch = contactText.match(
+                  /Antwortet\s+(in der Regel\s+)?innerhalb\s+von\s+([^\.]+)/i
+                );
+                const responseTime = responseTimeMatch
+                  ? responseTimeMatch[0].trim()
+                  : undefined;
+
+                // Follower
+                const followerMatch = contactText.match(/(\d+)\s*Follower/i);
+                const followerCount =
+                  followerMatch && followerMatch[1]
+                    ? parseInt(followerMatch[1])
+                    : undefined;
+
+                // Extract ID from URL - improved regex for all URL formats
+                // Formats: /s-anzeige/title/3274864391-22-1312 OR /s-anzeige/3274864391
                 const urlMatch =
-                  window.location.pathname.match(/\/(\d+)-\d+-\d+$/);
+                  window.location.pathname.match(/\/(\d+)(?:-\d+-\d+)?$/);
                 const id = urlMatch && urlMatch[1] ? urlMatch[1] : "";
 
                 return {
@@ -510,8 +555,11 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                       | "private",
                     phone: phone || undefined,
                     badges,
-                    activeSince: activeSince || undefined,
-                    totalAds: totalAds || undefined,
+                    ratingText,
+                    activeSince,
+                    responseTime,
+                    followerCount,
+                    activeListings,
                     profileUrl: sellerLink,
                   },
                 };
@@ -523,17 +571,23 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
               let downloadedImages: Array<{ url: string; localPath: string }> =
                 [];
               if (downloadImages && articleData.images.length > 0) {
-                // Erstelle Ordner für Scrape-Requests
-                const scrapeFolder = `scrape_${
-                  new Date().toISOString().split("T")[0]
-                }`;
+                // Extrahiere ID aus URL falls articleData.id leer
+                const extractedId =
+                  articleData.id ||
+                  url.match(/\/(\d+)(?:-\d+-\d+)?$/)?.[1] ||
+                  url.match(/\/(\d+)$/)?.[1] ||
+                  `unknown_${Date.now()}`;
+
+                // Erstelle Ordner mit konsistenter Struktur: article_{ID}_{DATUM}
+                const scrapeFolder = `article_${extractedId}_${new Date().toISOString().split("T")[0]
+                  }`;
 
                 const downloaded = await imageDownloader.downloadImages({
-                  articleId: articleData.id || `article_${Date.now()}`,
+                  articleId: extractedId,
                   urls: articleData.images,
                   searchFolder: scrapeFolder,
                   articleInfo: {
-                    id: articleData.id || `unknown_${Date.now()}`,
+                    id: extractedId,
                     title: articleData.title,
                     price: articleData.price,
                     location: articleData.location,
@@ -588,6 +642,311 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(500).send({
           status: "error",
           message: err instanceof Error ? err.message : "Scrape failed",
+        });
+      }
+    }
+  );
+
+  // ============================================
+  // GET /article/:id - Scrape single article by ID
+  // ============================================
+  app.get<{
+    Params: { id: string };
+    Querystring: { download?: string };
+  }>(
+    "/article/:id",
+    {
+      schema: {
+        params: {
+          type: "object",
+          properties: {
+            id: { type: "string", pattern: "^[0-9]+$" },
+          },
+          required: ["id"],
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            download: { type: "string" },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { id } = request.params;
+        const shouldDownload =
+          request.query.download === "true" || request.query.download === "1";
+
+        const articleUrl = `https://www.kleinanzeigen.de/s-anzeige/${id}`;
+        const scraper = new SearchScraper();
+        const imageDownloader = new ImageDownloader();
+
+        try {
+          // Connect and scrape
+          const browser = await (
+            scraper as unknown as {
+              connectToBrowser: () => Promise<unknown>;
+            }
+          ).connectToBrowser();
+          const page = (await (
+            browser as { newPage: () => Promise<unknown> }
+          ).newPage()) as import("puppeteer").Page;
+
+          await page.goto(articleUrl, {
+            waitUntil: "networkidle2",
+            timeout: 30000,
+          });
+
+          // Scroll to trigger lazy loading
+          await page.evaluate(() => {
+            window.scrollTo(0, 300);
+          });
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+
+          // Extract article data (same logic as /scrape)
+          const articleData = await page.evaluate(() => {
+            let rawTitle =
+              document.querySelector("#viewad-title")?.textContent?.trim() ||
+              "";
+            const title = rawTitle
+              .replace(/Reserviert\s*[•·]?\s*/gi, "")
+              .replace(/Gelöscht\s*[•·]?\s*/gi, "")
+              .replace(/[•·]\s*/g, "")
+              .replace(/\s+/g, " ")
+              .trim();
+
+            const price =
+              document.querySelector("#viewad-price")?.textContent?.trim() ||
+              "";
+            const description =
+              document
+                .querySelector("#viewad-description-text")
+                ?.textContent?.trim() || "";
+            const location =
+              document
+                .querySelector("#viewad-locality")
+                ?.textContent?.trim() || "";
+            const dateEl = document.querySelector(
+              "#viewad-extra-info span, #viewad-extra-info li:first-child"
+            );
+            const date = dateEl?.textContent?.trim() || "";
+
+            // Images
+            const images: string[] = [];
+            const seenImageIds = new Set<string>();
+            const getImageId = (url: string): string => {
+              const match = url.match(/images\/([a-f0-9]{2})\/([a-f0-9-]+)/i);
+              return match && match[2] ? match[2] : url;
+            };
+
+            document
+              .querySelectorAll(
+                ".galleryitem img, .gallery-thumbnail img, [data-testid='gallery-thumbnails'] img, .imagebox-thumbnail img"
+              )
+              .forEach((img) => {
+                let src =
+                  img.getAttribute("src") ||
+                  img.getAttribute("data-src") ||
+                  img.getAttribute("data-imgsrc");
+                if (src && src.includes("kleinanzeigen.de")) {
+                  src = src.replace(/\$_\d+\./, "$_59.");
+                  const imageId = getImageId(src);
+                  if (
+                    !seenImageIds.has(imageId) &&
+                    !src.includes("placeholder") &&
+                    !src.includes("avatar")
+                  ) {
+                    seenImageIds.add(imageId);
+                    images.push(src);
+                  }
+                }
+              });
+
+            if (images.length === 0) {
+              document
+                .querySelectorAll(
+                  "#viewad-image img, #viewad-gallery img, .galleryimage-element img"
+                )
+                .forEach((img) => {
+                  const src =
+                    img.getAttribute("src") || img.getAttribute("data-src");
+                  if (src && src.includes("kleinanzeigen.de")) {
+                    const imageId = getImageId(src);
+                    if (
+                      !seenImageIds.has(imageId) &&
+                      !src.includes("placeholder")
+                    ) {
+                      seenImageIds.add(imageId);
+                      images.push(src);
+                    }
+                  }
+                });
+            }
+
+            // Seller info
+            const sellerName =
+              document
+                .querySelector(
+                  "#viewad-contact .text-body-regular-strong, #viewad-contact .userprofile-vip a"
+                )
+                ?.textContent?.trim() || "";
+            const sellerLink =
+              document
+                .querySelector("#viewad-contact a[href*='/s-bestandsliste']")
+                ?.getAttribute("href") || "";
+            const userIdMatch = sellerLink.match(/userId=(\d+)/);
+            const sellerId = userIdMatch && userIdMatch[1] ? userIdMatch[1] : "";
+
+            const contactSection = document.querySelector("#viewad-contact");
+            const contactText = contactSection?.textContent || "";
+
+            const isCommercial =
+              contactText.includes("Gewerblicher Nutzer") ||
+              contactText.includes("Gewerblicher Anbieter") ||
+              document.querySelector(
+                ".badge-hint-pro-small, .icon-user-commercial"
+              ) !== null;
+
+            // Badges
+            const badges: string[] = [];
+            document
+              .querySelectorAll(".userbadge-tag, [class*='userbadge'] span")
+              .forEach((badge) => {
+                const text = badge.textContent?.trim().toLowerCase() || "";
+                if (text.includes("zufriedenheit") || text.includes("top")) {
+                  if (!badges.includes("TOP_SATISFACTION"))
+                    badges.push("TOP_SATISFACTION");
+                }
+                if (text.includes("freundlich")) {
+                  if (!badges.includes("FRIENDLY")) badges.push("FRIENDLY");
+                }
+              });
+
+            // Rating text
+            const ratingText = (() => {
+              const possibleTexts = [
+                "Freundlich",
+                "OK Zufriedenheit",
+                "TOP Zufriedenheit",
+              ];
+              for (const t of possibleTexts) {
+                if (contactText.includes(t)) return t;
+              }
+              return undefined;
+            })();
+
+            // Aktiv seit
+            const activeSinceMatch = contactText.match(
+              /Aktiv seit\s+(\d{2}\.\d{2}\.\d{4})/i
+            );
+            const activeSince =
+              activeSinceMatch && activeSinceMatch[1]
+                ? activeSinceMatch[1]
+                : undefined;
+
+            // Antwortzeit
+            const responseTimeMatch = contactText.match(
+              /Antwortet\s+(in der Regel\s+)?innerhalb\s+von\s+([^\.]+)/i
+            );
+            const responseTime = responseTimeMatch
+              ? responseTimeMatch[0].trim()
+              : undefined;
+
+            // Follower
+            const followerMatch = contactText.match(/(\d+)\s*Follower/i);
+            const followerCount =
+              followerMatch && followerMatch[1]
+                ? parseInt(followerMatch[1])
+                : undefined;
+
+            // Anzahl Anzeigen online
+            const activeListingsMatch = contactText.match(
+              /(\d+)\s*Anzeigen?\s*(online)?/i
+            );
+            const activeListings =
+              activeListingsMatch && activeListingsMatch[1]
+                ? parseInt(activeListingsMatch[1])
+                : undefined;
+
+            // ID from URL
+            const urlMatch =
+              window.location.pathname.match(/\/(\d+)(?:-\d+-\d+)?$/);
+            const articleId = urlMatch && urlMatch[1] ? urlMatch[1] : "";
+
+            return {
+              id: articleId,
+              title,
+              price,
+              description,
+              location,
+              date,
+              url: window.location.href,
+              images,
+              imageCount: images.length,
+              seller: {
+                name: sellerName,
+                id: sellerId,
+                type: (isCommercial ? "commercial" : "private") as
+                  | "commercial"
+                  | "private",
+                badges,
+                ratingText,
+                activeSince,
+                responseTime,
+                followerCount,
+                activeListings,
+                profileUrl: sellerLink,
+              },
+            };
+          });
+
+          await page.close();
+
+          // Download images if requested
+          let downloadedImages: Array<{ url: string; localPath: string }> = [];
+          if (shouldDownload && articleData.images.length > 0) {
+            const scrapeFolder = `article_${id}_${new Date().toISOString().split("T")[0]
+              }`;
+
+            const downloaded = await imageDownloader.downloadImages({
+              articleId: articleData.id || id,
+              urls: articleData.images,
+              searchFolder: scrapeFolder,
+              articleInfo: {
+                id: articleData.id || id,
+                title: articleData.title,
+                price: articleData.price,
+                location: articleData.location,
+                url: articleUrl,
+                description: articleData.description,
+                date: articleData.date,
+                seller: articleData.seller,
+              },
+            });
+
+            downloadedImages = downloaded
+              .filter((d) => d.success)
+              .map((d) => ({ url: d.url, localPath: d.localPath }));
+          }
+
+          return reply.send({
+            status: "success",
+            article: {
+              ...articleData,
+              downloadedImages: shouldDownload ? downloadedImages : undefined,
+            },
+            imagesDownloaded: shouldDownload,
+            timestamp: new Date().toISOString(),
+          });
+        } finally {
+          await scraper.disconnect();
+        }
+      } catch (err) {
+        request.log.error({ err }, "article scrape failed");
+        return reply.status(500).send({
+          status: "error",
+          message: err instanceof Error ? err.message : "Article scrape failed",
         });
       }
     }

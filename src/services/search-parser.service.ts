@@ -69,6 +69,20 @@ const SELECTORS = {
   SELLER_MEMBER_SINCE: ".userprofile-vip-since, [data-testid='member-since']",
   SELLER_AD_COUNT: ".userprofile-vip-ads, [data-testid='ad-count']",
 
+  // Erweiterte Seller-Infos (auf Detail-Seite im Kontakt-Bereich)
+  SELLER_RESPONSE_TIME:
+    "[data-testid='response-time'], .userbadge-response, #viewad-contact .text-body-regular",
+  SELLER_FOLLOWER_COUNT:
+    "[data-testid='follower-count'], .userprofile-follower",
+  SELLER_ACTIVE_SINCE:
+    "[data-testid='active-since'], #viewad-contact .text-body-regular",
+  SELLER_RATING_BADGE:
+    "#viewad-contact .userbadge, [data-testid='seller-rating'], .iconcard-userbadge",
+  SELLER_RATING_TEXT:
+    "#viewad-contact .userbadge-text, .iconcard-userbadge-text",
+  SELLER_ALL_ADS_LINK:
+    "#viewad-contact a[href*='s-bestandsliste'], a.text-body-regular-strong[href*='s-bestandsliste']",
+
   // Artikel-Detail (auf Detail-Seite)
   DETAIL_DESCRIPTION: "#viewad-description-text, [data-testid='description']",
   DETAIL_IMAGES:
@@ -242,6 +256,7 @@ export class SearchParser {
 
   /**
    * Parsed Verkäufer-Informationen von einer Detail-Seite
+   * Extrahiert alle verfügbaren Seller-Daten aus dem Kontakt-Bereich
    */
   async parseSellerInfo(page: Page): Promise<SellerInfo | null> {
     try {
@@ -266,21 +281,25 @@ export class SearchParser {
       const isTopSeller = badges.includes(SellerBadge.TOP_SELLER);
       const isVerified = badges.includes(SellerBadge.VERIFIED);
 
-      // Rating
+      // Rating aus Text und CSS
       const rating = await this.parseSellerRating(page);
+      const ratingText = await this.extractRatingText(page);
 
       // Zusatz-Infos
-      const memberSince = await this.extractTextFromPage(
-        page,
-        SELECTORS.SELLER_MEMBER_SINCE
-      );
+      const memberSince = await this.extractMemberSince(page);
       const adCountText = await this.extractTextFromPage(
         page,
         SELECTORS.SELLER_AD_COUNT
       );
       const activeListings = adCountText
         ? parseInt(adCountText.match(/\d+/)?.[0] || "0")
-        : undefined;
+        : await this.extractActiveListingsFromAllAdsLink(page);
+
+      // Antwortzeit - z.B. "Antwortet in der Regel innerhalb von 1 Stunde"
+      const responseTime = await this.extractResponseTime(page);
+
+      // Follower
+      const followerCount = await this.extractFollowerCount(page);
 
       return {
         id,
@@ -290,8 +309,11 @@ export class SearchParser {
         isVerified,
         badges,
         rating,
-        memberSince: memberSince || undefined,
+        ratingText,
+        memberSince,
         activeListings,
+        responseTime,
+        followerCount,
         profileUrl: profileUrl
           ? `https://www.kleinanzeigen.de${profileUrl}`
           : "",
@@ -336,6 +358,172 @@ export class SearchParser {
     }
     return undefined;
   }
+
+  /**
+   * Extrahiert Rating-Text (z.B. "Freundlich", "OK Zufriedenheit", "TOP")
+   * Sucht im Kontakt-Bereich nach Badge-Texten
+   */
+  private async extractRatingText(page: Page): Promise<string | undefined> {
+    try {
+      // Versuche verschiedene Selektoren für den Rating-Text
+      const ratingText = await page.evaluate(() => {
+        // Suche im viewad-contact Bereich nach Rating-Elementen
+        const contactSection = document.querySelector("#viewad-contact");
+        if (!contactSection) return null;
+
+        // Suche nach "Freundlich", "OK", "TOP" Text-Elementen
+        const possibleTexts = [
+          "Freundlich",
+          "OK Zufriedenheit",
+          "TOP Zufriedenheit",
+          "Zufriedenheit",
+        ];
+
+        // Durchsuche alle Text-Elemente im Kontakt-Bereich
+        const allText = contactSection.textContent || "";
+        for (const text of possibleTexts) {
+          if (allText.includes(text)) {
+            return text;
+          }
+        }
+
+        // Fallback: Badge-Text direkt lesen
+        const badgeEl = contactSection.querySelector(
+          ".userbadge-text, .iconcard-userbadge-text"
+        );
+        return badgeEl?.textContent?.trim() || null;
+      });
+
+      return ratingText || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Extrahiert "Aktiv seit" Datum
+   * Sucht nach "Aktiv seit DD.MM.YYYY" oder ähnlichen Mustern
+   */
+  private async extractMemberSince(page: Page): Promise<string | undefined> {
+    try {
+      const memberSince = await page.evaluate(() => {
+        const contactSection = document.querySelector("#viewad-contact");
+        if (!contactSection) return null;
+
+        const allText = contactSection.textContent || "";
+
+        // Suche nach "Aktiv seit" Pattern
+        const match = allText.match(/Aktiv seit\s+(\d{2}\.\d{2}\.\d{4})/i);
+        if (match && match[1]) {
+          return match[1];
+        }
+
+        // Alternative: Suche nach Datum-Pattern
+        const dateMatch = allText.match(
+          /seit\s+(\d{2}\.\d{2}\.\d{4}|\d{4})/i
+        );
+        if (dateMatch && dateMatch[1]) {
+          return dateMatch[1];
+        }
+
+        return null;
+      });
+
+      return memberSince || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Extrahiert Antwortzeit
+   * z.B. "Antwortet in der Regel innerhalb von 1 Stunde"
+   */
+  private async extractResponseTime(page: Page): Promise<string | undefined> {
+    try {
+      const responseTime = await page.evaluate(() => {
+        const contactSection = document.querySelector("#viewad-contact");
+        if (!contactSection) return null;
+
+        const allText = contactSection.textContent || "";
+
+        // Suche nach "Antwortet" Pattern
+        const match = allText.match(
+          /Antwortet\s+(in der Regel\s+)?innerhalb\s+von\s+([^\.]+)/i
+        );
+        if (match) {
+          return match[0].trim();
+        }
+
+        // Alternative Patterns
+        const altMatch = allText.match(/Antwortzeit[:\s]+([^\.]+)/i);
+        if (altMatch && altMatch[1]) {
+          return altMatch[1].trim();
+        }
+
+        return null;
+      });
+
+      return responseTime || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Extrahiert Follower-Anzahl
+   */
+  private async extractFollowerCount(page: Page): Promise<number | undefined> {
+    try {
+      const followerCount = await page.evaluate(() => {
+        const contactSection = document.querySelector("#viewad-contact");
+        if (!contactSection) return null;
+
+        const allText = contactSection.textContent || "";
+
+        // Suche nach "X Follower" Pattern
+        const match = allText.match(/(\d+)\s*Follower/i);
+        if (match && match[1]) {
+          return parseInt(match[1]);
+        }
+
+        return null;
+      });
+
+      return followerCount || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Extrahiert Anzahl aktiver Anzeigen aus dem "Alle Anzeigen" Link
+   * Falls kein direkter Counter vorhanden ist
+   */
+  private async extractActiveListingsFromAllAdsLink(
+    page: Page
+  ): Promise<number | undefined> {
+    try {
+      const count = await page.evaluate(() => {
+        const contactSection = document.querySelector("#viewad-contact");
+        if (!contactSection) return null;
+
+        // Suche nach "X Anzeigen online" oder ähnlichen Mustern
+        const allText = contactSection.textContent || "";
+        const match = allText.match(/(\d+)\s*Anzeigen?\s*(online)?/i);
+        if (match && match[1]) {
+          return parseInt(match[1]);
+        }
+
+        return null;
+      });
+
+      return count || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
 
   /**
    * Extrahiert Verkäufer-ID aus Profil-URL

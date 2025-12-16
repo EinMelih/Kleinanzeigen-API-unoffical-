@@ -1,4 +1,4 @@
-# 📂 Codebase Structure - Kleinanzeigen API
+i# 📂 Codebase Structure - Kleinanzeigen API
 
 > Letzte Aktualisierung: 12.12.2024
 
