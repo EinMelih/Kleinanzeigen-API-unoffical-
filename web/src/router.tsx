@@ -7,7 +7,7 @@ import { lazy } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import Layout from "./components/Layout";
 import { NotFound } from "./components/NotFound";
-import { adsApi, analyticsApi, searchApi } from "./lib/api";
+import { adsApi, analyticsApi } from "./lib/api";
 import Ads from "./pages/Ads";
 import Auth from "./pages/Auth";
 import Cookies from "./pages/Cookies";
@@ -17,6 +17,7 @@ import Items from "./pages/Items";
 import Messages from "./pages/Messages";
 import Profile from "./pages/Profile";
 import Radar from "./pages/Radar";
+import Search from "./pages/Search";
 
 // Create the root route using createRootRoute
 const rootRoute = createRootRoute({
@@ -89,13 +90,9 @@ const radarRoute = createRoute({
 
 // Search route
 const searchRoute = createRoute({
-  getParentRoute: () => dashboardRoute,
+  getParentRoute: () => rootRoute,
   path: "/search",
-  component: () => <div>Search Page</div>, // Placeholder component
-  loader: async () => {
-    // Fetch search results - search params will be handled in component
-    return searchApi.search({});
-  },
+  component: Search,
 });
 
 // Analytics route
@@ -160,10 +157,10 @@ const routeTree = rootRoute.addChildren([
   adsRoute,
   messagesRoute,
   radarRoute,
+  searchRoute,
   dashboardRoute.addChildren([
     adDetailRoute,
     adEditRoute,
-    searchRoute,
     analyticsRoute,
   ]),
   settingsRoute,
