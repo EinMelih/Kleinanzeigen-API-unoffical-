@@ -5,6 +5,8 @@
 import { FastifyInstance } from "fastify";
 import { SearchScraper } from "../services/search-scraper";
 import { ImageDownloader } from "../services/image-downloader.service";
+import * as fs from "fs";
+import * as path from "path";
 
 export async function searchRoutes(app: FastifyInstance): Promise<void> {
   // ============================================
@@ -126,11 +128,11 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
             imagesDownloaded: downloadImages,
             imageFolder: downloadImages
               ? `data/images/search/${ImageDownloader.createSearchFolderName({
-                query,
-                location,
-                radius,
-                count: scrapeAll ? result.articlesScraped : count,
-              })}`
+                  query,
+                  location,
+                  radius,
+                  count: scrapeAll ? result.articlesScraped : count,
+                })}`
               : undefined,
             timestamp: new Date().toISOString(),
           });
@@ -347,9 +349,9 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                 document
                   .querySelectorAll(
                     ".galleryitem img, " +
-                    ".gallery-thumbnail img, " +
-                    "[data-testid='gallery-thumbnails'] img, " +
-                    ".imagebox-thumbnail img"
+                      ".gallery-thumbnail img, " +
+                      "[data-testid='gallery-thumbnails'] img, " +
+                      ".imagebox-thumbnail img"
                   )
                   .forEach((img) => {
                     // Hole die große Version der URL (ersetze $_ mit $_59 für größere Bilder)
@@ -377,9 +379,9 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                   document
                     .querySelectorAll(
                       "#viewad-image img, " +
-                      "#viewad-gallery img, " +
-                      ".galleryimage-element img, " +
-                      "[data-testid='gallery'] img"
+                        "#viewad-gallery img, " +
+                        ".galleryimage-element img, " +
+                        "[data-testid='gallery'] img"
                     )
                     .forEach((img) => {
                       const src =
@@ -535,8 +537,9 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
 
                 // Extract ID from URL - improved regex for all URL formats
                 // Formats: /s-anzeige/title/3274864391-22-1312 OR /s-anzeige/3274864391
-                const urlMatch =
-                  window.location.pathname.match(/\/(\d+)(?:-\d+-\d+)?$/);
+                const urlMatch = window.location.pathname.match(
+                  /\/(\d+)(?:-\d+-\d+)?$/
+                );
                 const id = urlMatch && urlMatch[1] ? urlMatch[1] : "";
 
                 return {
@@ -579,8 +582,9 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                   `unknown_${Date.now()}`;
 
                 // Erstelle Ordner mit konsistenter Struktur: article_{ID}_{DATUM}
-                const scrapeFolder = `article_${extractedId}_${new Date().toISOString().split("T")[0]
-                  }`;
+                const scrapeFolder = `article_${extractedId}_${
+                  new Date().toISOString().split("T")[0]
+                }`;
 
                 const downloaded = await imageDownloader.downloadImages({
                   articleId: extractedId,
@@ -724,9 +728,8 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                 .querySelector("#viewad-description-text")
                 ?.textContent?.trim() || "";
             const location =
-              document
-                .querySelector("#viewad-locality")
-                ?.textContent?.trim() || "";
+              document.querySelector("#viewad-locality")?.textContent?.trim() ||
+              "";
             const dateEl = document.querySelector(
               "#viewad-extra-info span, #viewad-extra-info li:first-child"
             );
@@ -796,7 +799,8 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                 .querySelector("#viewad-contact a[href*='/s-bestandsliste']")
                 ?.getAttribute("href") || "";
             const userIdMatch = sellerLink.match(/userId=(\d+)/);
-            const sellerId = userIdMatch && userIdMatch[1] ? userIdMatch[1] : "";
+            const sellerId =
+              userIdMatch && userIdMatch[1] ? userIdMatch[1] : "";
 
             const contactSection = document.querySelector("#viewad-contact");
             const contactText = contactSection?.textContent || "";
@@ -870,8 +874,9 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                 : undefined;
 
             // ID from URL
-            const urlMatch =
-              window.location.pathname.match(/\/(\d+)(?:-\d+-\d+)?$/);
+            const urlMatch = window.location.pathname.match(
+              /\/(\d+)(?:-\d+-\d+)?$/
+            );
             const articleId = urlMatch && urlMatch[1] ? urlMatch[1] : "";
 
             return {
@@ -906,8 +911,9 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
           // Download images if requested
           let downloadedImages: Array<{ url: string; localPath: string }> = [];
           if (shouldDownload && articleData.images.length > 0) {
-            const scrapeFolder = `article_${id}_${new Date().toISOString().split("T")[0]
-              }`;
+            const scrapeFolder = `article_${id}_${
+              new Date().toISOString().split("T")[0]
+            }`;
 
             const downloaded = await imageDownloader.downloadImages({
               articleId: articleData.id || id,
@@ -951,4 +957,175 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
       }
     }
   );
+
+  // ============================================
+  // GET /local-searches - List all saved search folders
+  // ============================================
+  app.get("/local-searches", async (_request, reply) => {
+    try {
+      const searchDir = path.join(process.cwd(), "data", "images", "search");
+
+      if (!fs.existsSync(searchDir)) {
+        return reply.send({
+          status: "success",
+          folders: [],
+          message: "No local searches found",
+        });
+      }
+
+      const folders = fs
+        .readdirSync(searchDir, { withFileTypes: true })
+        .filter((dirent) => dirent.isDirectory())
+        .map((dirent) => {
+          const folderPath = path.join(searchDir, dirent.name);
+          const articleFolders = fs
+            .readdirSync(folderPath, { withFileTypes: true })
+            .filter((d) => d.isDirectory()).length;
+
+          return {
+            name: dirent.name,
+            articleCount: articleFolders,
+            path: `/local-search/${encodeURIComponent(dirent.name)}`,
+          };
+        })
+        .sort((a, b) => b.name.localeCompare(a.name)); // Newest first
+
+      return reply.send({
+        status: "success",
+        count: folders.length,
+        folders,
+      });
+    } catch (err) {
+      return reply.status(500).send({
+        status: "error",
+        message:
+          err instanceof Error ? err.message : "Failed to list local searches",
+      });
+    }
+  });
+
+  // ============================================
+  // GET /local-search/:folder - Get articles from a local search folder
+  // ============================================
+  app.get<{
+    Params: { folder: string };
+  }>("/local-search/:folder", async (request, reply) => {
+    try {
+      const { folder } = request.params;
+      const folderPath = path.join(
+        process.cwd(),
+        "data",
+        "images",
+        "search",
+        folder
+      );
+
+      if (!fs.existsSync(folderPath)) {
+        return reply.status(404).send({
+          status: "error",
+          message: "Search folder not found",
+        });
+      }
+
+      const articles: Array<{
+        id: string;
+        title: string;
+        price: string;
+        location: string;
+        url: string;
+        description?: string;
+        date?: string;
+        seller?: Record<string, unknown>;
+        images: string[];
+        localImages: string[];
+      }> = [];
+
+      const articleFolders = fs
+        .readdirSync(folderPath, { withFileTypes: true })
+        .filter((d) => d.isDirectory());
+
+      for (const articleDir of articleFolders) {
+        const articlePath = path.join(folderPath, articleDir.name);
+        const infoPath = path.join(articlePath, "article-info.json");
+
+        try {
+          if (fs.existsSync(infoPath)) {
+            const infoContent = fs.readFileSync(infoPath, "utf-8");
+            const info = JSON.parse(infoContent);
+
+            // Get local image files
+            const imageFiles = fs
+              .readdirSync(articlePath)
+              .filter((f) => /\.(jpg|jpeg|png|webp|gif)$/i.test(f))
+              .map((f) => `/images/search/${folder}/${articleDir.name}/${f}`);
+
+            articles.push({
+              ...info,
+              localImages: imageFiles,
+              images: imageFiles, // Override remote images with local paths
+            });
+          }
+        } catch (parseErr) {
+          // Skip articles with invalid JSON
+          console.error(`Failed to parse ${infoPath}:`, parseErr);
+        }
+      }
+
+      return reply.send({
+        status: "success",
+        folder,
+        count: articles.length,
+        articles,
+      });
+    } catch (err) {
+      return reply.status(500).send({
+        status: "error",
+        message:
+          err instanceof Error ? err.message : "Failed to load local search",
+      });
+    }
+  });
+
+  // ============================================
+  // GET /images/* - Serve local images statically
+  // ============================================
+  app.get("/images/*", async (request, reply) => {
+    try {
+      const imagePath = (request.params as { "*": string })["*"];
+      const fullPath = path.join(process.cwd(), "data", "images", imagePath);
+
+      // Security check - prevent directory traversal
+      const normalizedPath = path.normalize(fullPath);
+      const dataDir = path.join(process.cwd(), "data", "images");
+      if (!normalizedPath.startsWith(dataDir)) {
+        return reply.status(403).send({ error: "Access denied" });
+      }
+
+      if (!fs.existsSync(fullPath)) {
+        return reply.status(404).send({ error: "Image not found" });
+      }
+
+      // Determine content type
+      const ext = path.extname(fullPath).toLowerCase();
+      const contentTypes: Record<string, string> = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+      };
+
+      const contentType = contentTypes[ext] || "application/octet-stream";
+      const imageBuffer = fs.readFileSync(fullPath);
+
+      return reply
+        .header("Content-Type", contentType)
+        .header("Cache-Control", "public, max-age=86400")
+        .send(imageBuffer);
+    } catch (err) {
+      return reply.status(500).send({
+        error: err instanceof Error ? err.message : "Failed to serve image",
+      });
+    }
+  });
 }

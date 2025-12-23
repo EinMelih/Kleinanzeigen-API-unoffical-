@@ -15,6 +15,7 @@ import {
   User,
   X,
   Zap,
+  Search,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -38,6 +39,12 @@ const navigation = [
     href: "/radar",
     icon: Bell,
     color: "text-orange-500",
+  },
+  {
+    name: "Scraper",
+    href: "/search",
+    icon: Search,
+    color: "text-pink-500",
   },
   {
     name: "Analytics",

@@ -22,6 +22,25 @@
 | `defect` | Nur defekte Artikel vergleichen |
 | `working` | Nur funktionierende Artikel |
 
+### 2. Bulk Price Update (Batch Job)
+
+**Workflow:**
+
+1.  **Button:** "Alle Artikel bewerten" im Admin-Panel.
+2.  **SQL Fetch:** Alle Items aus der DB holen.
+3.  **AI Query Gen:** Für jedes Item generiert KI aus Titel/Beschreibung die optimale Such-Query (JSON).
+4.  **Batch Processing:** Items werden nacheinander (oder parallel mit Limit) durch den `SearchScraper` gejagt.
+5.  **Update:** Berechnete Durchschnittspreise werden per SQL-Update in die DB geschrieben.
+
+**Vorteil:**
+
+- Vollautomatisch für das ganze Inventar.
+- Läuft im Hintergrund.
+
+**Monetarisierung:**
+
+- 💎 **Pro-Feature:** Exklusiv für zahlende Nutzer (Premium/Pro Plan).
+
 **Request:**
 
 ```json

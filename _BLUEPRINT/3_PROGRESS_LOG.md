@@ -4,6 +4,28 @@
 
 ---
 
+### [23.12.2024] - Visual Search Scraper UI 🔍
+
+- ✅ **Web UI Implementiert:**
+
+  - Neue Page `Search.tsx` mit Live & Local Search
+  - Navigation "Scraper" Tab hinzugefügt
+  - Filter-Formular (Query, Ort, Radius, Preis, Sortierung)
+  - Result Grid mit Bildern & Details-Modal
+
+- ✅ **Neue Backend Endpoints:**
+
+  - `GET /local-searches` - Listet gespeicherte Suchen
+  - `GET /local-search/:folder` - Lädt lokale Artikel
+  - `GET /images/*` - Serviert lokale Bilder
+
+- ✅ **Integration:**
+  - Lokale Bilder werden nahtlos geladen
+  - Fallback auf Thumbnails wenn nötig
+  - Native Select-Inputs statt buggy Custom-Selects
+
+---
+
 ### [16.12.2024] - Article Endpoint & Endpoint Tests ✅
 
 - ✅ **Neuer Endpoint: `GET /article/:id`**
@@ -14,13 +36,13 @@
 
 - ✅ **Endpoint Tests durchgeführt:**
 
-  | Endpoint | Status |
-  |----------|--------|
-  | `GET /article/:id` | ✅ Funktioniert |
-  | `GET /article/:id?download=true` | ✅ Funktioniert |
-  | `GET /search?q=...` | ✅ Funktioniert |
-  | `POST /search` mit `includeDetails` | ✅ Funktioniert |
-  | `POST /scrape` | ⚠️ Chrome-Timeout |
+  | Endpoint                            | Status            |
+  | ----------------------------------- | ----------------- |
+  | `GET /article/:id`                  | ✅ Funktioniert   |
+  | `GET /article/:id?download=true`    | ✅ Funktioniert   |
+  | `GET /search?q=...`                 | ✅ Funktioniert   |
+  | `POST /search` mit `includeDetails` | ✅ Funktioniert   |
+  | `POST /scrape`                      | ⚠️ Chrome-Timeout |
 
 - ✅ **Ordnerstruktur in `data/images/search/`:**
   ```
@@ -31,7 +53,6 @@
   ```
 
 ---
-
 
 - ✅ **SearchParser & SearchScraper Refactoring:**
 
@@ -55,15 +76,15 @@
 
 - 📋 **Seller-Daten die jetzt gescraped werden:**
 
-  | Feld | Beispiel |
-  |------|----------|
-  | `name` | "R. Khal" |
-  | `rating` | `friendly` / `ok` |
-  | `ratingText` | "Freundlich" / "OK Zufriedenheit" |
-  | `memberSince` | "28.01.2021" |
-  | `responseTime` | "Antwortet in der Regel innerhalb von 1 Stunde" |
-  | `followerCount` | 1 |
-  | `activeListings` | 5 |
+  | Feld             | Beispiel                                        |
+  | ---------------- | ----------------------------------------------- |
+  | `name`           | "R. Khal"                                       |
+  | `rating`         | `friendly` / `ok`                               |
+  | `ratingText`     | "Freundlich" / "OK Zufriedenheit"               |
+  | `memberSince`    | "28.01.2021"                                    |
+  | `responseTime`   | "Antwortet in der Regel innerhalb von 1 Stunde" |
+  | `followerCount`  | 1                                               |
+  | `activeListings` | 5                                               |
 
 ---
 
