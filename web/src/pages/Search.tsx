@@ -9,6 +9,8 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import {
@@ -16,12 +18,14 @@ import {
   ExternalLink,
   FolderOpen,
   ImageIcon,
+  List,
   Loader2,
   MapPin,
   Search as SearchIcon,
   User,
   Database,
   Wifi,
+  Download,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -35,6 +39,7 @@ interface SearchArticle {
   url: string;
   images?: string[];
   localImages?: string[];
+  downloadedImages?: Array<{ url: string; localPath: string }>;
   thumbnail?: string;
   description?: string;
   seller?: {
@@ -86,7 +91,7 @@ export default function Search() {
   const [selectedFolder, setSelectedFolder] = useState<string>("");
   const { toast } = useToast();
 
-  // Form state
+  // Search Form state
   const [query, setQuery] = useState("");
   const [count, setCount] = useState("10");
   const [location, setLocation] = useState("");
@@ -95,6 +100,10 @@ export default function Search() {
   const [maxPrice, setMaxPrice] = useState("");
   const [sortBy, setSortBy] = useState("RELEVANCE");
   const [includeDetails, setIncludeDetails] = useState(false);
+
+  // Scraper Form state
+  const [bulkUrls, setBulkUrls] = useState("");
+  const [downloadImages, setDownloadImages] = useState(true);
 
   // Load local folders on mount
   useEffect(() => {
@@ -209,13 +218,96 @@ export default function Search() {
     }
   };
 
+  // Unused single scrape logic removed
+
+  const handleBulkScrape = async () => {
+    let urls = bulkUrls.split("\n").map(u => u.trim()).filter(u => u.length > 0);
+
+    // Auto-convert numeric IDs to URLs
+    urls = urls.map(u => {
+        if (/^\d+$/.test(u)) {
+            return `https://www.kleinanzeigen.de/s-anzeige/${u}`;
+        }
+        return u;
+    });
+
+    if (urls.length === 0) {
+       toast({ title: "Keine Daten", description: "Bitte URLs oder IDs eingeben", variant: "destructive" });
+       return;
+    }
+
+    setLoading(true);
+    setResults(null);
+
+    try {
+      const response = await fetch("/api/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ urls, downloadImages }),
+      });
+
+      const data = await response.json();
+
+      if (data.status === "success" && data.results) {
+        const successful = data.results.filter((r: any) => r.success).map((r: any) => r.article);
+
+        setResults({
+            status: "success",
+            count: successful.length,
+            articles: successful,
+            folder: "Scraped Results"
+        });
+
+        toast({
+            title: "Scraping abgeschlossen",
+            description: `${data.successfulScrapes} von ${data.totalUrls} erfolgreich`,
+            variant: data.failedScrapes > 0 ? "default" : "default"
+        });
+      } else {
+        throw new Error(data.message || "Scraping fehlgeschlagen");
+      }
+    } catch (error) {
+      console.error("Scrape error:", error);
+      toast({
+        title: "Fehler",
+        description: error instanceof Error ? error.message : "Fatal Error",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const getImageUrl = (article: SearchArticle): string | null => {
-    // Prefer local images
+    // Prefer downloaded/local items
+    if (article.downloadedImages && article.downloadedImages.length > 0) {
+        // If the path is absolute or relative on server, we need to serve it.
+        // Assuming /api/images proxy or similar if configured, or just mapped paths.
+        // localPath might be file system path. url is remote.
+        // However, in Search.tsx earlier:
+        // if (article.localImages) -> /api${article.localImages[0]}
+
+        // Let's standardise on "localImages" property or handle "downloadedImages" logic
+        // "downloadedImages": [{url, localPath}]
+        // We probably need to map these to a serving URL.
+        // For now, let's use the remote url or if we have mapping logic.
+        // But wait! standard "articles" from local search have "localImages" which are relative URLs like "/images/search/..."
+
+        // Only if we scraped just now, we might have `downloadedImages`
+        // We really want to display them from local if possible.
+        // But the previous implementation assumed pre-existing folder structure known to backend.
+        // The /scrape endpoint returns localPath. We need to convert it to a serve-able URL if we want to show it immediately?
+        // Actually, backend static serve is on /images/*.
+
+        // Let's fallback to remote image for fresh scrape to ensure it works.
+        return article.downloadedImages[0].url;
+    }
+
+    // Existing logic for loaded local search
     if (article.localImages && article.localImages.length > 0) {
       return `/api${article.localImages[0]}`;
     }
     if (article.images && article.images.length > 0) {
-      // Check if it's a local path
       if (article.images[0].startsWith("/images/")) {
         return `/api${article.images[0]}`;
       }
@@ -233,363 +325,308 @@ export default function Search() {
         animate={{ opacity: 1, y: 0 }}
       >
         <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-          🔍 Kleinanzeigen Suche
+          🔍 Kleinanzeigen Scraper
         </h1>
         <p className="text-muted-foreground">
-          Live-Suche oder lokale gespeicherte Ergebnisse durchsuchen
+          Suchen, Scrapen und Daten lokal verwalten
         </p>
       </motion.div>
 
-      {/* Mode Toggle */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.05 }}
-        className="flex gap-2"
-      >
-        <Button
-          variant={mode === "local" ? "default" : "outline"}
-          onClick={() => setMode("local")}
-          className="flex-1"
-        >
-          <Database className="h-4 w-4 mr-2" />
-          Lokale Ergebnisse ({localFolders.length})
-        </Button>
-        <Button
-          variant={mode === "live" ? "default" : "outline"}
-          onClick={() => setMode("live")}
-          className="flex-1"
-        >
-          <Wifi className="h-4 w-4 mr-2" />
-          Live-Suche
-        </Button>
-      </motion.div>
+      <Tabs defaultValue="search" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-2 max-w-xl">
+          <TabsTrigger value="search">Suche (Live & Lokal)</TabsTrigger>
+          <TabsTrigger value="scraper">URL Scraper (Single & Bulk)</TabsTrigger>
+        </TabsList>
 
-      {/* Local Mode - Folder Selection */}
-      {mode === "local" && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-        >
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <FolderOpen className="h-5 w-5 mr-2 text-primary" />
-                Gespeicherte Suchen
-              </CardTitle>
-              <CardDescription>
-                Wähle eine gespeicherte Suche aus dem lokalen Speicher
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {localFolders.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">
-                  Keine lokalen Suchen gefunden. Führe eine Live-Suche mit "Bilder speichern" durch.
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="folder">Such-Ordner wählen</Label>
-                    <select
-                      id="folder"
-                      value={selectedFolder}
-                      onChange={(e) => setSelectedFolder(e.target.value)}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    >
-                      {localFolders.map((folder) => (
-                        <option key={folder.name} value={folder.name}>
-                          {folder.name} ({folder.articleCount} Artikel)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <Button
-                    onClick={() => loadLocalSearch(selectedFolder)}
-                    disabled={loading || !selectedFolder}
-                    size="lg"
-                    className="w-full"
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                        Lade...
-                      </>
-                    ) : (
-                      <>
-                        <FolderOpen className="mr-2 h-5 w-5" />
-                        Ergebnisse laden
-                      </>
-                    )}
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
+        {/* ==================== SEARCH TAB ==================== */}
+        <TabsContent value="search" className="space-y-6">
+          {/* Mode Toggle */}
+          <div className="flex gap-2 max-w-md">
+            <Button
+              variant={mode === "local" ? "default" : "outline"}
+              onClick={() => setMode("local")}
+              className="flex-1"
+            >
+              <Database className="h-4 w-4 mr-2" />
+              Lokal ({localFolders.length})
+            </Button>
+            <Button
+              variant={mode === "live" ? "default" : "outline"}
+              onClick={() => setMode("live")}
+              className="flex-1"
+            >
+              <Wifi className="h-4 w-4 mr-2" />
+              Live
+            </Button>
+          </div>
 
-      {/* Live Mode - Search Form */}
-      {mode === "live" && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-        >
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <SearchIcon className="h-5 w-5 mr-2 text-primary" />
-                Live-Suche
-              </CardTitle>
-              <CardDescription>
-                Suche auf Kleinanzeigen.de und speichere die Ergebnisse lokal
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {/* Query */}
-                <div className="space-y-2 lg:col-span-2">
-                  <Label htmlFor="query">Suchbegriff *</Label>
-                  <Input
-                    id="query"
-                    placeholder="z.B. iPhone 15, PS5, Fahrrad..."
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleLiveSearch()}
-                    className="text-lg"
-                  />
-                </div>
-
-                {/* Count */}
-                <div className="space-y-2">
-                  <Label htmlFor="count">Anzahl</Label>
-                  <Input
-                    id="count"
-                    type="number"
-                    min="1"
-                    max="100"
-                    placeholder="10"
-                    value={count}
-                    onChange={(e) => setCount(e.target.value)}
-                  />
-                </div>
-
-                {/* Location */}
-                <div className="space-y-2">
-                  <Label htmlFor="location">Ort</Label>
-                  <Input
-                    id="location"
-                    placeholder="z.B. Köln, Berlin..."
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                  />
-                </div>
-
-                {/* Radius */}
-                <div className="space-y-2">
-                  <Label htmlFor="radius">Radius</Label>
-                  <select
-                    id="radius"
-                    value={radius}
-                    onChange={(e) => setRadius(e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  >
-                    {RADIUS_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Sort By */}
-                <div className="space-y-2">
-                  <Label htmlFor="sortBy">Sortierung</Label>
-                  <select
-                    id="sortBy"
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  >
-                    {SORT_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Min Price */}
-                <div className="space-y-2">
-                  <Label htmlFor="minPrice">Preis von (€)</Label>
-                  <Input
-                    id="minPrice"
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={minPrice}
-                    onChange={(e) => setMinPrice(e.target.value)}
-                  />
-                </div>
-
-                {/* Max Price */}
-                <div className="space-y-2">
-                  <Label htmlFor="maxPrice">Preis bis (€)</Label>
-                  <Input
-                    id="maxPrice"
-                    type="number"
-                    min="0"
-                    placeholder="unbegrenzt"
-                    value={maxPrice}
-                    onChange={(e) => setMaxPrice(e.target.value)}
-                  />
-                </div>
-
-                {/* Include Details Checkbox */}
-                <div className="space-y-2 flex items-end">
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={includeDetails}
-                      onChange={(e) => setIncludeDetails(e.target.checked)}
-                      className="w-4 h-4 rounded border-gray-300"
-                    />
-                    <span className="text-sm">Details laden (langsamer)</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Submit Button */}
-              <div className="mt-6 flex justify-end">
-                <Button
-                  onClick={handleLiveSearch}
-                  disabled={loading}
-                  size="lg"
-                  className="min-w-[200px]"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                      Suche läuft...
-                    </>
+          {/* Local Folder Select */}
+          {mode === "local" && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center text-lg">
+                    <FolderOpen className="h-5 w-5 mr-2 text-primary" />
+                    Gespeicherte Ergebnisse laden
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {localFolders.length === 0 ? (
+                    <p className="text-muted-foreground text-center py-4">
+                      Keine lokalen Suchen gefunden.
+                    </p>
                   ) : (
-                    <>
-                      <SearchIcon className="mr-2 h-5 w-5" />
-                      Suchen & Speichern
-                    </>
+                    <div className="flex gap-4">
+                      <div className="flex-1">
+                        <select
+                          value={selectedFolder}
+                          onChange={(e) => setSelectedFolder(e.target.value)}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                          {localFolders.map((folder) => (
+                            <option key={folder.name} value={folder.name}>
+                              {folder.name} ({folder.articleCount} Artikel)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <Button
+                        onClick={() => loadLocalSearch(selectedFolder)}
+                        disabled={loading || !selectedFolder}
+                      >
+                        {loading ? <Loader2 className="animate-spin" /> : "Laden"}
+                      </Button>
+                    </div>
                   )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
 
-      {/* Results */}
+          {/* Live Search Form */}
+          {mode === "live" && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center text-lg">
+                    <SearchIcon className="h-5 w-5 mr-2 text-primary" />
+                    Neue Suche starten
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    <div className="space-y-2 lg:col-span-2">
+                      <Label>Suchbegriff</Label>
+                      <Input
+                        placeholder="z.B. iPhone 15"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleLiveSearch()}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Anzahl</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={count}
+                        onChange={(e) => setCount(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Ort</Label>
+                      <Input
+                        placeholder="z.B. Köln"
+                        value={location}
+                        onChange={(e) => setLocation(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                       <Label>Radius</Label>
+                       <select
+                         value={radius}
+                         onChange={(e) => setRadius(e.target.value)}
+                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                       >
+                         {RADIUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                       </select>
+                    </div>
+                    <div className="space-y-2">
+                       <Label>Sortierung</Label>
+                       <select
+                         value={sortBy}
+                         onChange={(e) => setSortBy(e.target.value)}
+                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                       >
+                         {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                       </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Preis Min (€)</Label>
+                      <Input type="number" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Preis Max (€)</Label>
+                      <Input type="number" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} />
+                    </div>
+                    <div className="space-y-2 flex items-center pt-8">
+                       <label className="flex items-center space-x-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={includeDetails}
+                          onChange={(e) => setIncludeDetails(e.target.checked)}
+                          className="w-4 h-4 rounded border-gray-300"
+                        />
+                        <span className="text-sm">Details laden</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div className="mt-6 flex justify-end">
+                    <Button onClick={handleLiveSearch} disabled={loading} size="lg">
+                      {loading ? <Loader2 className="mr-2 animate-spin" /> : <SearchIcon className="mr-2 h-4 w-4" />}
+                      Suchen & Speichern
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+        </TabsContent>
+
+        {/* ==================== UNIFIED SCRAPER TAB ==================== */}
+        <TabsContent value="scraper" className="space-y-6">
+           <Card>
+             <CardHeader>
+               <CardTitle className="flex items-center">
+                 <List className="h-5 w-5 mr-2 text-primary" />
+                 Direkt-Scraper
+               </CardTitle>
+               <CardDescription>
+                 Scrape einzelne oder mehrere Artikel gleichzeitig.
+                 Unterstützt <strong>URLs</strong> und <strong>Artikel-IDs</strong>.
+               </CardDescription>
+             </CardHeader>
+             <CardContent className="space-y-4">
+               <div className="space-y-2">
+                 <Label>URLs oder IDs (eine pro Zeile)</Label>
+                 <Textarea
+                   placeholder="https://www.kleinanzeigen.de/... &#10;12345678 &#10;..."
+                   value={bulkUrls}
+                   onChange={(e) => setBulkUrls(e.target.value)}
+                   className="min-h-[200px] font-mono text-sm"
+                 />
+                 <p className="text-xs text-muted-foreground">
+                   Tipp: Du kannst auch einfach nur die ID (z.B. 2938471) eingeben.
+                 </p>
+               </div>
+               <div className="flex items-center space-x-2">
+                  <input
+                   type="checkbox"
+                   id="dl-bulk"
+                   checked={downloadImages}
+                   onChange={(e) => setDownloadImages(e.target.checked)}
+                   className="rounded border-gray-300"
+                 />
+                 <Label htmlFor="dl-bulk">Bilder herunterladen</Label>
+               </div>
+               <Button onClick={handleBulkScrape} disabled={loading || !bulkUrls} className="w-full">
+                 {loading ? <Loader2 className="mr-2 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                 Scraping starten
+               </Button>
+             </CardContent>
+           </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* ==================== RESULTS GRID ==================== */}
       {results && results.articles && results.articles.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
         >
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>
-                  📦 {results.count || results.articles.length} Ergebnisse
-                  {results.folder && (
-                    <span className="text-sm font-normal text-muted-foreground ml-2">
-                      aus {results.folder}
-                    </span>
-                  )}
-                </span>
-                {results.searchUrl && (
-                  <a
-                    href={results.searchUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-primary hover:underline flex items-center"
-                  >
-                    <ExternalLink className="h-4 w-4 mr-1" />
-                    Auf Kleinanzeigen öffnen
-                  </a>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {results.articles.map((article, index) => (
-                  <motion.div
-                    key={article.id}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: index * 0.03 }}
-                  >
-                    <Card
-                      className="group cursor-pointer hover:shadow-lg transition-all duration-300 overflow-hidden h-full"
-                      onClick={() => setSelectedArticle(article)}
-                    >
-                      {/* Image */}
-                      <div className="aspect-square bg-muted relative overflow-hidden">
-                        {getImageUrl(article) ? (
-                          <img
-                            src={getImageUrl(article)!}
-                            alt={article.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              target.style.display = "none";
-                            }}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <ImageIcon className="h-12 w-12 text-muted-foreground/50" />
-                          </div>
-                        )}
-                        {/* Price Badge */}
-                        <div className="absolute bottom-2 right-2">
-                          <Badge className="bg-primary/90 text-primary-foreground font-bold">
-                            {article.price}
-                          </Badge>
-                        </div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold">
+              Ergebnisse: {results.count || results.articles.length} Artikel
+            </h2>
+            {results.folder && (
+               <Badge variant="secondary"><FolderOpen className="w-3 h-3 mr-1"/> {results.folder}</Badge>
+            )}
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {results.articles.map((article, index) => (
+              <motion.div
+                key={article.id || index}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: index * 0.03 }}
+              >
+                <Card
+                  className="group cursor-pointer hover:shadow-lg transition-all duration-300 overflow-hidden h-full"
+                  onClick={() => setSelectedArticle(article)}
+                >
+                  {/* Image */}
+                  <div className="aspect-square bg-muted relative overflow-hidden">
+                    {getImageUrl(article) ? (
+                      <img
+                        src={getImageUrl(article)!}
+                        alt={article.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        onError={(e: any) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = "none";
+                        }}
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <ImageIcon className="h-12 w-12 text-muted-foreground/50" />
                       </div>
+                    )}
+                    {/* Price Badge */}
+                    <div className="absolute bottom-2 right-2">
+                       {article.price && (
+                        <Badge className="bg-primary/90 text-primary-foreground font-bold">
+                            {article.price}
+                        </Badge>
+                       )}
+                    </div>
+                  </div>
 
-                      {/* Content */}
-                      <CardContent className="p-4 space-y-2">
-                        <h3 className="font-semibold line-clamp-2 text-sm">
-                          {article.title}
-                        </h3>
+                  {/* Content */}
+                  <CardContent className="p-4 space-y-2">
+                    <h3 className="font-semibold line-clamp-2 text-sm">
+                      {article.title || "Ohne Titel"}
+                    </h3>
 
-                        <div className="flex items-center text-xs text-muted-foreground">
-                          <MapPin className="h-3 w-3 mr-1" />
-                          <span className="line-clamp-1">{article.location}</span>
-                        </div>
+                    <div className="flex items-center text-xs text-muted-foreground">
+                      <MapPin className="h-3 w-3 mr-1" />
+                      <span className="line-clamp-1">{article.location || "Unbekannt"}</span>
+                    </div>
 
-                        {article.seller?.name && (
-                          <div className="flex items-center text-xs text-muted-foreground">
-                            <User className="h-3 w-3 mr-1" />
-                            <span>{article.seller.name}</span>
-                            {article.seller.type === "commercial" && (
-                              <Badge variant="outline" className="ml-2 text-[10px]">
-                                Gewerblich
-                              </Badge>
-                            )}
-                          </div>
+                    {article.seller?.name && (
+                      <div className="flex items-center text-xs text-muted-foreground">
+                        <User className="h-3 w-3 mr-1" />
+                        <span>{article.seller.name}</span>
+                        {article.seller.type === "commercial" && (
+                          <Badge variant="outline" className="ml-2 text-[10px]">
+                            Gewerblich
+                          </Badge>
                         )}
-
-                        {article.date && (
-                          <p className="text-[10px] text-muted-foreground/70">
-                            {article.date}
-                          </p>
-                        )}
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
         </motion.div>
       )}
 
@@ -632,19 +669,27 @@ export default function Search() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Images */}
-                {((selectedArticle.localImages || selectedArticle.images) &&
-                  (selectedArticle.localImages?.length || selectedArticle.images?.length)) && (
-                  <div className="grid gap-2 grid-cols-3">
-                    {(selectedArticle.localImages || selectedArticle.images || []).map((img, idx) => (
-                      <img
-                        key={idx}
-                        src={img.startsWith("/images/") ? `/api${img}` : img}
-                        alt={`Bild ${idx + 1}`}
-                        className="rounded-lg aspect-square object-cover"
-                      />
-                    ))}
-                  </div>
-                )}
+                <div className="grid gap-2 grid-cols-3">
+                    {/* Combine all sources but prefer downloaded/local */}
+                    {(() => {
+                        const imgs = [];
+                        if (selectedArticle.downloadedImages) {
+                             imgs.push(...selectedArticle.downloadedImages.map(d => d.url));
+                        } else if (selectedArticle.localImages) {
+                             imgs.push(...selectedArticle.localImages.map(l => `/api${l}`));
+                        } else if (selectedArticle.images) {
+                             imgs.push(...selectedArticle.images.map(i => i.startsWith('/images') ? `/api${i}` : i));
+                        }
+                        return imgs.slice(0, 9).map((img, idx) => (
+                          <img
+                            key={idx}
+                            src={img}
+                            alt={`Bild ${idx + 1}`}
+                            className="rounded-lg aspect-square object-cover bg-muted"
+                          />
+                        ));
+                    })()}
+                </div>
 
                 {/* Description */}
                 {selectedArticle.description && (
@@ -685,3 +730,4 @@ export default function Search() {
     </div>
   );
 }
+

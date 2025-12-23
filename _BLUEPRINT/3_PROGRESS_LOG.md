@@ -19,6 +19,12 @@
   - `GET /local-search/:folder` - Lädt lokale Artikel
   - `GET /images/*` - Serviert lokale Bilder
 
+- ✅ **Scraper Tabs Integration:**
+
+  - Unterteilung in "Suche", "Einzel-Artikel", "Bulk-Scraper"
+  - Einheitliches UI für alle Modi in `Search.tsx`
+  - Bulk-Processing Support
+
 - ✅ **Integration:**
   - Lokale Bilder werden nahtlos geladen
   - Fallback auf Thumbnails wenn nötig
