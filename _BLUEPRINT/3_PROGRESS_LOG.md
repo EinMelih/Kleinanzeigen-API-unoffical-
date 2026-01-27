@@ -4,6 +4,34 @@
 
 ---
 
+### [27.01.2026] - AI Reselling Sniper Integration 🎯
+
+- ✅ **Neuer Endpoint: `POST /message/send`**
+  - Sendet Nachrichten an Verkäufer
+  - Puppeteer-basierte Browser-Automation
+  - Für n8n Negotiator Workflow
+
+- ✅ **Neue Dateien erstellt:**
+  - `src/types/message.types.ts` - TypeScript Types
+  - `src/services/message.service.ts` - Message Service
+  - `src/routes/message.routes.ts` - API Routes
+
+- ✅ **Sniper Dokumentation in `docs/sniper/`:**
+  - `README.md` - Übersicht & Schnellstart
+  - `supabase_schema.sql` - Datenbank-Schema
+  - `n8n_workflow_analyzer.md` - Workflow A: Der Analyzer
+  - `n8n_workflow_negotiator.md` - Workflow B: Der Negotiator
+  - `n8n_workflow_control.md` - Workflow C: Control Center
+
+- 🏗️ **Architektur:**
+  ```
+  Kleinanzeigen → n8n (Analyzer/Negotiator) → Supabase
+                         ↓
+                  POST /message/send → Verkäufer
+  ```
+
+---
+
 ### [23.12.2024] - Visual Search Scraper UI 🔍
 
 - ✅ **Web UI Implementiert:**

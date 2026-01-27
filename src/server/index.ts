@@ -13,6 +13,7 @@ import { serverController } from "../controllers/server-controller";
 import {
   authRoutes,
   cookieRoutes,
+  messageRoutes,
   oauthRoutes,
   searchRoutes,
   tokenRoutes,
@@ -69,6 +70,9 @@ app.register(authRoutes);
 
 // Cookie routes: /cookies/*
 app.register(cookieRoutes);
+
+// Message routes: /message/*
+app.register(messageRoutes);
 
 // OAuth routes: /oauth/*
 app.register(oauthRoutes);
