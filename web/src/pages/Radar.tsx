@@ -280,7 +280,7 @@ const MessageCard = ({ message }: { message: RadarMessage }) => {
 export default function Radar() {
   const [notifications, setNotifications] =
     useState<Notification[]>(mockNotifications);
-  const [messages, setMessages] = useState<RadarMessage[]>(mockMessages);
+  const [messages] = useState<RadarMessage[]>(mockMessages);
   const [showRead, setShowRead] = useState(false);
   const [activeTab, setActiveTab] = useState<"notifications" | "messages">(
     "notifications"

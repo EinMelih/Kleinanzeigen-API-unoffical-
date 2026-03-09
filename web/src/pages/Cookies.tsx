@@ -155,6 +155,25 @@ export default function Cookies() {
     }
   };
 
+  const fetchAutoRefreshStatus = async () => {
+    try {
+      const response = await fetch("/api/cookies/auto-refresh/status");
+      if (response.ok) {
+        const data = await response.json();
+        if (data.status === "success") {
+          setAutoRefreshStatus({
+            isRunning: Boolean(data.isRunning),
+            interval:
+              typeof data.interval === "number" ? data.interval : 0.25,
+            lastRefresh: data.lastRefresh || new Date().toISOString(),
+          });
+        }
+      }
+    } catch (error) {
+      console.log("Could not fetch auto-refresh status");
+    }
+  };
+
   // Fetch detailed cookie information for selected user
   const fetchCookieDetails = async (email: string) => {
     if (!email) return;
@@ -167,7 +186,8 @@ export default function Cookies() {
           setSelectedCookieDetails({
             email,
             cookieCount: data.result.cookieCount || 0,
-            expiresAt: data.result.expiresAt || new Date().toISOString(),
+            expiresAt:
+              data.result.nextExpiry || data.result.expiresAt || new Date().toISOString(),
             lastValidated:
               data.result.lastValidated || new Date().toISOString(),
             isValid: data.result.isValid || false,
@@ -208,7 +228,7 @@ export default function Cookies() {
       });
       const data = await response.json();
 
-      if (data.status === "success") {
+      if (data.status === "success" && data.result?.isValid) {
         toast({
           title: "Login via Cookie Successful",
           description: "Successfully logged in using stored cookies",
@@ -220,7 +240,8 @@ export default function Cookies() {
       } else {
         toast({
           title: "Login via Cookie Failed",
-          description: data.message || "Could not login with cookies",
+          description:
+            data.result?.error || data.message || "Could not login with cookies",
           variant: "destructive",
         });
       }
@@ -252,11 +273,16 @@ export default function Cookies() {
         method: "POST",
       });
       const data = await response.json();
+      const testWasValid = Boolean(data.result?.isValid);
 
       toast({
         title: "Cookie Test Completed",
-        description: data.message,
-        variant: data.status === "success" ? "default" : "destructive",
+        description:
+          data.result?.error ||
+          (testWasValid
+            ? "Cookies are valid and login markers were detected"
+            : "Cookies are invalid or expired"),
+        variant: testWasValid ? "default" : "destructive",
       });
 
       // Refresh details after test
@@ -324,6 +350,7 @@ export default function Cookies() {
           title: "Auto-Refresh Started",
           description: data.message,
         });
+        fetchAutoRefreshStatus();
       } else {
         toast({
           title: "Error",
@@ -360,6 +387,7 @@ export default function Cookies() {
           title: "Auto-Refresh Stopped",
           description: data.message,
         });
+        fetchAutoRefreshStatus();
       } else {
         toast({
           title: "Error",
@@ -398,7 +426,8 @@ export default function Cookies() {
 
       toast({
         title: "Cookie Refresh Completed",
-        description: data.message || "Cookies refreshed successfully",
+        description:
+          data.result?.message || data.message || "Cookies refreshed successfully",
       });
 
       // Refresh data after refresh
@@ -420,6 +449,7 @@ export default function Cookies() {
   useEffect(() => {
     fetchCookieUsers();
     fetchCookieStats();
+    fetchAutoRefreshStatus();
   }, []);
 
   return (

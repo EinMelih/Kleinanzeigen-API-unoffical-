@@ -3,6 +3,7 @@ import * as path from "path";
 import puppeteer, { Browser, Page } from "puppeteer";
 import { getGermanDate } from "../../shared/utils";
 import { ChromeService } from "./chromeService";
+import { PlatformGuardService } from "./platform-guard.service";
 
 // Configuration for cookie validation
 const COOKIE_CONFIG = {
@@ -55,9 +56,11 @@ export interface CookieDetail {
 
 export class CookieValidator {
   private readonly cookiesDir: string;
+  private readonly platformGuard: PlatformGuardService;
 
   constructor() {
     this.cookiesDir = path.join(process.cwd(), "data", "cookies");
+    this.platformGuard = new PlatformGuardService();
   }
 
   // Get all cookie files
@@ -82,6 +85,15 @@ export class CookieValidator {
   async checkCookieExpiry(cookiePath: string): Promise<CookieValidationResult> {
     try {
       const email = this.extractEmailFromFilename(cookiePath);
+      const guardStatus = this.platformGuard.isBlocked();
+      if (guardStatus.blocked) {
+        return {
+          isValid: false,
+          email,
+          cookieCount: 0,
+          error: this.platformGuard.getBlockMessage(guardStatus.state),
+        };
+      }
       const cookies = JSON.parse(fs.readFileSync(cookiePath, "utf8"));
 
       if (!Array.isArray(cookies) || cookies.length === 0) {
@@ -240,6 +252,19 @@ export class CookieValidator {
         waitUntil: "networkidle2",
         timeout: COOKIE_CONFIG.TIMEOUTS.PAGE_LOAD,
       });
+
+      const blockState = await this.platformGuard.inspectKleinanzeigenPage(
+        page,
+        "cookies:login-test"
+      );
+      if (blockState) {
+        return {
+          isValid: false,
+          email,
+          cookieCount: cookies.length,
+          error: this.platformGuard.getBlockMessage(blockState),
+        };
+      }
 
       // Wait a bit for page to fully load
       await new Promise((resolve) =>

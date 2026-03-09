@@ -8,50 +8,49 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { appClient } from "@/lib/app-client";
 import {
-  Activity,
-  CheckCircle,
-  Clock,
-  Cookie,
-  FileText,
-  RefreshCw,
-} from "lucide-react";
+  AppOverview,
+  HealthResponse,
+  MessageHealthResponse,
+} from "@/lib/app-types";
+import { Activity, Database, RefreshCw, ShieldCheck, Terminal } from "lucide-react";
 import { useEffect, useState } from "react";
 
-interface HealthStatus {
-  status: string;
-  timestamp: string;
-  totalFiles: number;
-  validFiles: number;
-  expiredFiles: number;
-  totalCookieCount: number;
-  nextExpiry: string;
-  validityDuration: string;
+function formatDate(value?: string | null): string {
+  if (!value) {
+    return "n/a";
+  }
+
+  return new Date(value).toLocaleString("de-DE");
 }
 
 export default function Health() {
-  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [messageHealth, setMessageHealth] = useState<MessageHealthResponse | null>(
+    null
+  );
+  const [overview, setOverview] = useState<AppOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
-  useEffect(() => {
-    fetchHealthStatus();
-  }, []);
-
-  const fetchHealthStatus = async () => {
-    setLoading(true);
+  const loadHealth = async () => {
     try {
-      const response = await fetch("/api/health");
-      const data = await response.json();
-      setHealthStatus(data);
-      toast({
-        title: "Status aktualisiert",
-        description: "Health-Status erfolgreich abgerufen",
-      });
+      setLoading(true);
+      const [nextHealth, nextMessageHealth, nextOverview] = await Promise.all([
+        appClient.getHealth(),
+        appClient.getMessageHealth(),
+        appClient.getOverview(),
+      ]);
+
+      setHealth(nextHealth);
+      setMessageHealth(nextMessageHealth);
+      setOverview(nextOverview);
     } catch (error) {
       toast({
-        title: "Fehler",
-        description: "Health-Status konnte nicht abgerufen werden",
+        title: "Health konnte nicht geladen werden",
+        description:
+          error instanceof Error ? error.message : "Unbekannter Fehler",
         variant: "destructive",
       });
     } finally {
@@ -59,240 +58,193 @@ export default function Health() {
     }
   };
 
-  if (loading && !healthStatus) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    void loadHealth();
+  }, []);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Server Health</h1>
-        <p className="text-muted-foreground">
-          Überwachung des Server-Status und Cookie-Systems
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Health</h1>
+          <p className="text-muted-foreground">
+            Live-Zustand von API, Message-Service, Cookie-Statistiken und aktuellem Storage-Modus.
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => void loadHealth()} disabled={loading}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          Aktualisieren
+        </Button>
       </div>
 
-      {/* Status Overview */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Server Status</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">API</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center space-x-2">
-              <Badge
-                variant={
-                  healthStatus?.status === "healthy" ? "default" : "destructive"
-                }
-              >
-                {healthStatus?.status || "Unknown"}
-              </Badge>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Letzte Prüfung:{" "}
-              {healthStatus?.timestamp
-                ? new Date(healthStatus.timestamp).toLocaleString()
-                : "N/A"}
+            <Badge variant={health?.ok ? "default" : "destructive"}>
+              {health?.ok ? "OK" : "Fehler"}
+            </Badge>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {health?.message ?? "Kein Status"}
             </p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Cookie Dateien
-            </CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Chrome Automation</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {healthStatus?.totalFiles || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {healthStatus?.validFiles || 0} gültig,{" "}
-              {healthStatus?.expiredFiles || 0} abgelaufen
+            <div className="text-2xl font-bold">{health?.chrome.port ?? 9222}</div>
+            <p className="text-sm text-muted-foreground">
+              Status: {health?.chrome.status ?? "unbekannt"}
             </p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Gesamte Cookies
-            </CardTitle>
-            <Cookie className="h-4 w-4 text-muted-foreground" />
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Message Service</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {healthStatus?.totalCookieCount || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">Über alle Benutzer</p>
+            <Badge variant={messageHealth?.status === "ok" ? "default" : "destructive"}>
+              {messageHealth?.status ?? "unbekannt"}
+            </Badge>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {messageHealth?.service ?? "message"} • {formatDate(messageHealth?.timestamp)}
+            </p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Nächster Ablauf
-            </CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Storage</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {healthStatus?.nextExpiry
-                ? new Date(healthStatus.nextExpiry).toLocaleDateString()
-                : "N/A"}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {healthStatus?.validityDuration || "Unknown"}
+            <div className="text-2xl font-bold">{overview?.database.mode ?? "n/a"}</div>
+            <p className="text-sm text-muted-foreground">
+              Ziel: {overview?.database.target ?? "n/a"}
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Detailed Status */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CheckCircle className="h-5 w-5" />
-            Detaillierter Status
-          </CardTitle>
-          <CardDescription>Aktuelle Werte und Statistiken</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <h4 className="font-medium mb-3">Cookie-Übersicht</h4>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    Gesamte Dateien:
-                  </span>
-                  <span className="font-medium">
-                    {healthStatus?.totalFiles || 0}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    Gültige Dateien:
-                  </span>
-                  <span className="font-medium text-green-600">
-                    {healthStatus?.validFiles || 0}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    Abgelaufene Dateien:
-                  </span>
-                  <span className="font-medium text-red-600">
-                    {healthStatus?.expiredFiles || 0}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    Gesamte Cookies:
-                  </span>
-                  <span className="font-medium">
-                    {healthStatus?.totalCookieCount || 0}
-                  </span>
-                </div>
+      <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-primary" />
+              Cookie und Laufzeitdaten
+            </CardTitle>
+            <CardDescription>
+              Dieselben Werte, die auch vom Dashboard genutzt werden.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-3 text-sm">
+              <div>
+                <span className="font-medium">Cookie-Dateien:</span>{" "}
+                {health?.cookies.totalFiles ?? 0}
+              </div>
+              <div>
+                <span className="font-medium">Gueltige Dateien:</span>{" "}
+                {health?.cookies.validFiles ?? 0}
+              </div>
+              <div>
+                <span className="font-medium">Abgelaufene Dateien:</span>{" "}
+                {health?.cookies.expiredFiles ?? 0}
+              </div>
+              <div>
+                <span className="font-medium">Gesamtanzahl Cookies:</span>{" "}
+                {health?.cookies.totalCookieCount ?? 0}
               </div>
             </div>
-            <div>
-              <h4 className="font-medium mb-3">Zeit-Informationen</h4>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    Letzte Aktualisierung:
-                  </span>
-                  <span className="font-medium">
-                    {healthStatus?.timestamp
-                      ? new Date(healthStatus.timestamp).toLocaleString()
-                      : "N/A"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    Nächster Ablauf:
-                  </span>
-                  <span className="font-medium">
-                    {healthStatus?.nextExpiry
-                      ? new Date(healthStatus.nextExpiry).toLocaleString()
-                      : "N/A"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    Gültigkeitsdauer:
-                  </span>
-                  <span className="font-medium">
-                    {healthStatus?.validityDuration || "Unknown"}
-                  </span>
-                </div>
+            <div className="space-y-3 text-sm">
+              <div>
+                <span className="font-medium">Naechster Ablauf:</span>{" "}
+                {formatDate(health?.cookies.nextExpiry)}
+              </div>
+              <div>
+                <span className="font-medium">Gueltigkeitsdauer:</span>{" "}
+                {health?.cookies.validityDuration ?? "n/a"}
+              </div>
+              <div>
+                <span className="font-medium">Health Timestamp:</span>{" "}
+                {formatDate(health?.timestamp)}
+              </div>
+              <div>
+                <span className="font-medium">Account Login:</span>{" "}
+                {overview?.account.isLoggedIn ? "erkannt" : "nicht erkannt"}
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      {/* Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Aktionen</CardTitle>
-          <CardDescription>
-            Server-Status verwalten und überwachen
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-4">
-            <Button onClick={fetchHealthStatus} disabled={loading}>
-              {loading ? (
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4 mr-2" />
-              )}
-              Status aktualisieren
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-primary" />
+                Konfiguration
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div>
+                <span className="font-medium">Account:</span>{" "}
+                {overview?.account.email || "nicht gesetzt"}
+              </div>
+              <div>
+                <span className="font-medium">.env:</span>{" "}
+                {overview?.config.envFilePresent ? "vorhanden" : "fehlt"}
+              </div>
+              <div>
+                <span className="font-medium">Config-Datei:</span>{" "}
+                {overview?.config.configPath ?? "n/a"}
+              </div>
+              <div>
+                <span className="font-medium">Schema:</span>{" "}
+                {overview?.database.schemaPath ?? "n/a"}
+              </div>
+            </CardContent>
+          </Card>
 
-      {/* System Info */}
-      <Card>
-        <CardHeader>
-          <CardTitle>System-Informationen</CardTitle>
-          <CardDescription>
-            Technische Details und Konfiguration
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <h4 className="font-medium mb-2">API-Endpoints</h4>
-              <ul className="text-sm text-muted-foreground space-y-1">
-                <li>• GET /health - Server-Status</li>
-                <li>• GET /auth/status/:email - Benutzer-Status</li>
-                <li>• GET /cookies/status - Cookie-Status</li>
-                <li>• GET /tokens/analyze/:email - Token-Analyse</li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-medium mb-2">Features</h4>
-              <ul className="text-sm text-muted-foreground space-y-1">
-                <li>• Echtzeit-Status-Überwachung</li>
-                <li>• Cookie-Gültigkeitsprüfung</li>
-                <li>• Automatische Aktualisierung</li>
-                <li>• Detaillierte Statistiken</li>
-              </ul>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Terminal className="h-5 w-5 text-primary" />
+                Relevante Endpunkte
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm text-muted-foreground">
+              <div>`GET /health`</div>
+              <div>`GET /app/overview`</div>
+              <div>`GET /cookies/stats`</div>
+              <div>`POST /auth/check-login`</div>
+              <div>`POST /app/telegram/test`</div>
+            </CardContent>
+          </Card>
+
+          {overview && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Database className="h-5 w-5 text-primary" />
+                  Hinweise
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                {overview.warnings.map((warning) => (
+                  <div key={warning} className="rounded-lg bg-muted px-3 py-2">
+                    {warning}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

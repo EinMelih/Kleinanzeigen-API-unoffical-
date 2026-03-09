@@ -1,5 +1,6 @@
 import puppeteer, { Browser, Page } from "puppeteer";
 import { SearchParser } from "./search-parser.service";
+import { PlatformGuardService } from "./platform-guard.service";
 import { SellerInfo } from "../types/search.types";
 
 /**
@@ -48,9 +49,11 @@ export interface SearchOptions {
 export class SearchScraper {
   private browser: Browser | null = null;
   private readonly debugPort: number;
+  private readonly platformGuard: PlatformGuardService;
 
   constructor(debugPort: number = 9222) {
     this.debugPort = debugPort;
+    this.platformGuard = new PlatformGuardService();
   }
 
   private wait(ms: number): Promise<void> {
@@ -251,6 +254,22 @@ export class SearchScraper {
     let totalAvailable = 0;
     let totalPages = 1;
     let pagesScraped = 0;
+    const guardStatus = this.platformGuard.isBlocked();
+
+    if (guardStatus.blocked) {
+      return {
+        success: false,
+        query: options.query,
+        totalAvailable,
+        totalPages,
+        pagesScraped,
+        articlesScraped: 0,
+        articles: [],
+        searchUrl,
+        scrapedAt: new Date().toISOString(),
+        error: this.platformGuard.getBlockMessage(guardStatus.state),
+      };
+    }
 
     try {
       this.browser = await this.connectToBrowser();
@@ -270,6 +289,26 @@ export class SearchScraper {
         waitUntil: "networkidle2",
         timeout: 30000,
       });
+
+      const initialBlock = await this.platformGuard.inspectKleinanzeigenPage(
+        page,
+        "search:results:first-page"
+      );
+      if (initialBlock) {
+        await page.close();
+        return {
+          success: false,
+          query: options.query,
+          totalAvailable,
+          totalPages,
+          pagesScraped,
+          articlesScraped: 0,
+          articles: [],
+          searchUrl,
+          scrapedAt: new Date().toISOString(),
+          error: this.platformGuard.getBlockMessage(initialBlock),
+        };
+      }
 
       // Handle cookie consent if it appears
       await this.handleCookieConsent(page);
@@ -315,6 +354,14 @@ export class SearchScraper {
               timeout: 60000, // 60 seconds timeout
             });
             await this.wait(2000); // Wait for content to load
+
+            const pagedBlock = await this.platformGuard.inspectKleinanzeigenPage(
+              page,
+              `search:results:page-${currentPage}`
+            );
+            if (pagedBlock) {
+              throw new Error(this.platformGuard.getBlockMessage(pagedBlock));
+            }
           }
 
           // How many more articles do we need?
@@ -559,6 +606,14 @@ export class SearchScraper {
         waitUntil: "networkidle2",
         timeout: 15000,
       });
+
+      const detailBlock = await this.platformGuard.inspectKleinanzeigenPage(
+        detailPage,
+        "search:detail"
+      );
+      if (detailBlock) {
+        throw new Error(this.platformGuard.getBlockMessage(detailBlock));
+      }
 
       // Handle cookie consent on detail page if needed
       await this.handleCookieConsent(detailPage);

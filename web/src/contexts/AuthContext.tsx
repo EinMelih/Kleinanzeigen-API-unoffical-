@@ -1,16 +1,11 @@
-import { authApi } from "@/lib/api";
-import {
-  createContext,
-  ReactNode,
-  useContext,
-  useEffect,
-  useState,
-} from "react";
+import { appClient } from "@/lib/app-client";
+import { createContext, ReactNode, useContext, useEffect, useState } from "react";
 
 interface User {
   id: string;
   email: string;
   name?: string;
+  isLoggedIn: boolean;
 }
 
 interface AuthContextType {
@@ -24,6 +19,15 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function createUser(email: string, isLoggedIn: boolean): User {
+  return {
+    id: email || "default-account",
+    email,
+    isLoggedIn,
+    name: email ? email.split("@")[0] : undefined,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -31,9 +35,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const checkAuth = async () => {
     try {
       setIsLoading(true);
-      const response = await authApi.checkStatus();
-      if (response.success && response.data.isAuthenticated) {
-        setUser(response.data.user || null);
+      const overview = await appClient.getOverview();
+
+      if (overview.account.configured && overview.account.email) {
+        setUser(createUser(overview.account.email, overview.account.isLoggedIn));
       } else {
         setUser(null);
       }
@@ -46,41 +51,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (email: string, password: string) => {
-    try {
-      const response = await authApi.login({ email, password });
-      if (response.success) {
-        setUser(response.data.user);
-        // Store token in localStorage or secure storage
-        localStorage.setItem("auth_token", response.data.token);
-      } else {
-        throw new Error(response.message || "Login failed");
-      }
-    } catch (error) {
-      console.error("Login failed:", error);
-      throw error;
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = (await response.json()) as {
+      loggedIn?: boolean;
+      message?: string;
+    };
+
+    if (!response.ok && !data.loggedIn) {
+      throw new Error(data.message || "Login failed");
     }
+
+    await checkAuth();
   };
 
   const logout = async () => {
-    try {
-      await authApi.logout();
-      setUser(null);
-      localStorage.removeItem("auth_token");
-    } catch (error) {
-      console.error("Logout failed:", error);
-      // Still clear local state even if API call fails
-      setUser(null);
-      localStorage.removeItem("auth_token");
-    }
+    setUser(null);
   };
 
   useEffect(() => {
-    checkAuth();
+    void checkAuth();
   }, []);
 
   const value: AuthContextType = {
     user,
-    isAuthenticated: !!user,
+    isAuthenticated: Boolean(user?.isLoggedIn),
     isLoading,
     login,
     logout,

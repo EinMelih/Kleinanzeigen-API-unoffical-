@@ -5,6 +5,7 @@ import {
   LoginStatus,
   UserAuthStatus,
 } from "../../shared/types";
+import { CookieValidator } from "./cookies-validation";
 
 // Check if user is logged in
 export async function checkLoginStatus(email: string): Promise<LoginStatus> {
@@ -18,10 +19,18 @@ export async function checkLoginStatus(email: string): Promise<LoginStatus> {
   }
 
   try {
-    const cookies = JSON.parse(fs.readFileSync(cookiePath, "utf8"));
-    console.log(`Checking cookies for ${email}: found ${cookies.length} cookies in ${cookiePath}`);
-    // Simple check: if cookies exist, we assume the user is logged in
-    return { isLoggedIn: cookies.length > 0, needsLogin: cookies.length === 0 };
+    const validator = new CookieValidator();
+    const expiryStatus = await validator.checkCookieExpiry(cookiePath);
+
+    if (!expiryStatus.isValid || expiryStatus.cookieCount === 0) {
+      return { isLoggedIn: false, needsLogin: true };
+    }
+
+    const liveStatus = await validator.testCookieLogin(cookiePath);
+    return {
+      isLoggedIn: liveStatus.isValid,
+      needsLogin: !liveStatus.isValid,
+    };
   } catch (error) {
     console.log(`Error reading cookies for ${email}:`, error);
     return { isLoggedIn: false, needsLogin: true };

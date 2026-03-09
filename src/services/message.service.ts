@@ -10,15 +10,18 @@ import {
     SendMessageResponse,
     ConversationInfo,
 } from "../types/message.types";
+import { PlatformGuardService } from "./platform-guard.service";
 
 export class MessageService {
     private browser: Browser | null = null;
     private readonly debugPort: number;
     private readonly cookieDir: string;
+    private readonly platformGuard: PlatformGuardService;
 
     constructor(debugPort: number = 9222) {
         this.debugPort = debugPort;
         this.cookieDir = path.join(process.cwd(), "data", "cookies");
+        this.platformGuard = new PlatformGuardService();
     }
 
     private wait(ms: number): Promise<void> {
@@ -77,6 +80,18 @@ export class MessageService {
         const { email, articleId, message } = request;
 
         console.log(`📤 Sending message for article ${articleId}`);
+        const guardStatus = this.platformGuard.isBlocked();
+
+        if (guardStatus.blocked) {
+            return {
+                success: false,
+                status: "failed",
+                message: this.platformGuard.getBlockMessage(guardStatus.state),
+                articleId,
+                timestamp: new Date().toISOString(),
+                error: "PLATFORM_BLOCKED",
+            };
+        }
 
         // Check if cookies exist
         if (!(await this.loadCookies(email))) {
@@ -116,6 +131,22 @@ export class MessageService {
                 waitUntil: "networkidle2",
                 timeout: 30000,
             });
+
+            const blockState = await this.platformGuard.inspectKleinanzeigenPage(
+                page,
+                "message:article"
+            );
+            if (blockState) {
+                await page.close();
+                return {
+                    success: false,
+                    status: "failed",
+                    message: this.platformGuard.getBlockMessage(blockState),
+                    articleId,
+                    timestamp: new Date().toISOString(),
+                    error: "PLATFORM_BLOCKED",
+                };
+            }
 
             // Handle cookie consent
             await this.handleCookieConsent(page);

@@ -4,6 +4,7 @@ import puppeteer, { Browser, Page } from "puppeteer";
 import { LoginCredentials, LoginResult } from "../../shared/types";
 import { emailToSlug, randomDelay } from "../../shared/utils";
 import { ChromeService } from "../services/chromeService";
+import { PlatformGuardService } from "../services/platform-guard.service";
 
 // Login configuration
 const LOGIN_CONFIG = {
@@ -64,8 +65,18 @@ async function testLoginWithCookiesOnly(
 ): Promise<LoginResult> {
   let browser: Browser | null = null;
   let page: Page | null = null;
+  const platformGuard = new PlatformGuardService();
 
   try {
+    const guardStatus = platformGuard.isBlocked();
+    if (guardStatus.blocked) {
+      return {
+        ok: false,
+        loggedIn: false,
+        didSubmit: false,
+        error: platformGuard.getBlockMessage(guardStatus.state),
+      };
+    }
     // Setup Chrome
     const chromeService = new ChromeService();
     const chromeResult = await chromeService.setupChrome({ saveToEnv: true });
@@ -95,6 +106,19 @@ async function testLoginWithCookiesOnly(
       waitUntil: "networkidle2",
       timeout: 30000,
     });
+
+    const blockState = await platformGuard.inspectKleinanzeigenPage(
+      page,
+      "auth:cookie-only"
+    );
+    if (blockState) {
+      return {
+        ok: false,
+        loggedIn: false,
+        didSubmit: false,
+        error: platformGuard.getBlockMessage(blockState),
+      };
+    }
 
     // Check login status using #user-email element as primary indicator
     const loggedIn = await page.evaluate(() => {
@@ -166,9 +190,20 @@ export async function performLogin(
 ): Promise<LoginResult> {
   let browser: Browser | null = null;
   let page: Page | null = null;
+  const platformGuard = new PlatformGuardService();
 
   try {
     const { email, password } = credentials;
+    const guardStatus = platformGuard.isBlocked();
+
+    if (guardStatus.blocked) {
+      return {
+        ok: false,
+        loggedIn: false,
+        didSubmit: false,
+        error: platformGuard.getBlockMessage(guardStatus.state),
+      };
+    }
 
     // Check if we have valid cookies first
     const cookieFileName = `cookies-${emailToSlug(email)}.json`;
@@ -270,6 +305,18 @@ export async function performLogin(
       waitUntil: "networkidle2",
       timeout: 90000,
     });
+    const initialBlock = await platformGuard.inspectKleinanzeigenPage(
+      page,
+      "auth:login-page"
+    );
+    if (initialBlock) {
+      return {
+        ok: false,
+        loggedIn: false,
+        didSubmit: false,
+        error: platformGuard.getBlockMessage(initialBlock),
+      };
+    }
     await randomDelay();
     await page.evaluate(() => window.scrollBy(0, Math.random() * 100 + 50));
 
@@ -302,6 +349,18 @@ export async function performLogin(
         waitUntil: "networkidle2",
         timeout: 30000, // Reduced from 60000ms
       });
+      const postSubmitBlock = await platformGuard.inspectKleinanzeigenPage(
+        page,
+        "auth:post-submit"
+      );
+      if (postSubmitBlock) {
+        return {
+          ok: false,
+          loggedIn: false,
+          didSubmit: true,
+          error: platformGuard.getBlockMessage(postSubmitBlock),
+        };
+      }
     } catch (e) {
       // Form not found - might already be logged in
       console.log("Login form not found - might already be logged in");
@@ -416,7 +475,7 @@ export async function performLogin(
     fs.writeFileSync(cookiePath, JSON.stringify(cookies, null, 2));
 
     return {
-      ok: loggedIn || didSubmit, // best-effort
+      ok: loggedIn,
       loggedIn,
       didSubmit,
       cookieFile: cookiePath,

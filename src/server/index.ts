@@ -11,11 +11,13 @@ import { serverController } from "../controllers/server-controller";
 
 // Import all routes
 import {
+  appRoutes,
   authRoutes,
   cookieRoutes,
   messageRoutes,
   oauthRoutes,
   searchRoutes,
+  sniperRoutes,
   tokenRoutes,
 } from "../routes";
 
@@ -65,6 +67,9 @@ app.get("/health", async () => {
 // REGISTER ROUTES
 // ============================================
 
+// App overview and local settings
+app.register(appRoutes);
+
 // Auth routes: /auth/*
 app.register(authRoutes);
 
@@ -82,6 +87,9 @@ app.register(tokenRoutes);
 
 // Search routes: /search/*
 app.register(searchRoutes);
+
+// Sniper analysis, message generation and dry-run testing
+app.register(sniperRoutes);
 
 // Server controller (existing)
 app.register(serverController);

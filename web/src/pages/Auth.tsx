@@ -10,8 +10,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { appClient } from "@/lib/app-client";
+import { AppOverview } from "@/lib/app-types";
 import {
-  AlertTriangle,
   CheckCircle,
   Clock,
   LogIn,
@@ -19,83 +20,67 @@ import {
   Shield,
   User,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface LoginResponse {
   status: string;
   message: string;
-  loggedIn: boolean;
-  needsLogin: boolean;
+  loggedIn?: boolean;
+  needsLogin?: boolean;
+  requiresEmailVerification?: boolean;
+  verificationReason?: string;
   cookieFile?: string;
+  error?: string;
 }
 
 interface CheckLoginResponse {
   status: string;
   message: string;
-  loggedIn: boolean;
-  cookieCount: number;
-  lastValidated: string;
+  loggedIn?: boolean;
+  cookiesInFile?: number;
+  lastValidated?: string;
   timestamp: string;
 }
 
-// Utility function to format date in German timezone
-const formatGermanDate = (dateString: string): string => {
-  try {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat("de-DE", {
-      timeZone: "Europe/Berlin",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).format(date);
-  } catch (error) {
-    return "Invalid date";
+function formatDate(value?: string | null): string {
+  if (!value) {
+    return "n/a";
   }
-};
 
-// Utility function to format time differences
-const formatTimeDifference = (dateString: string): string => {
-  try {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = date.getTime() - now.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    const diffHours = Math.floor(
-      (diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)
-    );
-    const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-
-    if (diffMs < 0) {
-      return "Expired";
-    } else if (diffDays > 0) {
-      return `${diffDays} day${diffDays !== 1 ? "s" : ""}`;
-    } else if (diffHours > 0) {
-      return `${diffHours} hour${diffHours !== 1 ? "s" : ""}`;
-    } else if (diffMinutes > 0) {
-      return `${diffMinutes} minute${diffMinutes !== 1 ? "s" : ""}`;
-    } else {
-      return "Less than 1 minute";
-    }
-  } catch (error) {
-    return "Invalid date";
-  }
-};
+  return new Date(value).toLocaleString("de-DE");
+}
 
 export default function Auth() {
+  const [overview, setOverview] = useState<AppOverview | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [loginResult, setLoginResult] = useState<LoginResponse | null>(null);
-  const [checkResult, setCheckResult] = useState<CheckLoginResponse | null>(
-    null
-  );
+  const [checkResult, setCheckResult] = useState<CheckLoginResponse | null>(null);
   const { toast } = useToast();
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const loadOverview = async () => {
+    try {
+      const nextOverview = await appClient.getOverview();
+      setOverview(nextOverview);
+      setEmail((current) => current || nextOverview.config.accountEmail);
+      setPassword((current) => current || nextOverview.config.accountPassword);
+    } catch (error) {
+      toast({
+        title: "Auth-Status konnte nicht geladen werden",
+        description:
+          error instanceof Error ? error.message : "Unbekannter Fehler",
+        variant: "destructive",
+      });
+    }
+  };
+
+  useEffect(() => {
+    void loadOverview();
+  }, []);
+
+  const handleLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
     setLoading(true);
 
     try {
@@ -105,25 +90,27 @@ export default function Auth() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await response.json();
+      const data = (await response.json()) as LoginResponse;
       setLoginResult(data);
 
-      if (data.loggedIn) {
-        toast({
-          title: "Login Successful",
-          description: data.message,
-        });
-      } else {
-        toast({
-          title: "Login Failed",
-          description: data.message,
-          variant: "destructive",
-        });
-      }
+      toast({
+        title:
+          data.loggedIn || data.requiresEmailVerification
+            ? "Login-Request gesendet"
+            : "Login fehlgeschlagen",
+        description: data.message,
+        variant:
+          data.loggedIn || data.requiresEmailVerification
+            ? "default"
+            : "destructive",
+      });
+
+      await loadOverview();
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Login request failed",
+        title: "Login fehlgeschlagen",
+        description:
+          error instanceof Error ? error.message : "Unbekannter Fehler",
         variant: "destructive",
       });
     } finally {
@@ -132,10 +119,10 @@ export default function Auth() {
   };
 
   const handleCheckLogin = async () => {
-    if (!email) {
+    if (!email.trim()) {
       toast({
-        title: "Error",
-        description: "Please enter an email address",
+        title: "Email fehlt",
+        description: "Bitte gib zuerst eine Email-Adresse ein.",
         variant: "destructive",
       });
       return;
@@ -150,25 +137,21 @@ export default function Auth() {
         body: JSON.stringify({ email }),
       });
 
-      const data = await response.json();
+      const data = (await response.json()) as CheckLoginResponse;
       setCheckResult(data);
 
-      if (data.loggedIn) {
-        toast({
-          title: "Login Check",
-          description: data.message,
-        });
-      } else {
-        toast({
-          title: "Login Check",
-          description: data.message,
-          variant: "destructive",
-        });
-      }
+      toast({
+        title: data.loggedIn ? "Login aktiv" : "Login nicht aktiv",
+        description: data.message,
+        variant: data.loggedIn ? "default" : "destructive",
+      });
+
+      await loadOverview();
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Login check failed",
+        title: "Login-Check fehlgeschlagen",
+        description:
+          error instanceof Error ? error.message : "Unbekannter Fehler",
         variant: "destructive",
       });
     } finally {
@@ -178,226 +161,220 @@ export default function Auth() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Authentication</h1>
-        <p className="text-muted-foreground mt-1">
-          Login to Kleinanzeigen and check authentication status
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Authentication</h1>
+          <p className="text-muted-foreground">
+            Login, Live-Check und Cookie-Status fuer den in den Settings hinterlegten Kleinanzeigen-Account.
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => void loadOverview()}>
+          <RefreshCw className="mr-2 h-4 w-4" />
+          Status neu laden
+        </Button>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Login Form */}
-        <Card className="border-l-4 border-l-blue-500">
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Standard-Account</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="font-semibold">
+              {overview?.account.email || "nicht gesetzt"}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {overview?.config.hasAccountPassword
+                ? "Passwort ist gespeichert"
+                : "Kein Passwort gespeichert"}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Cookie-Status</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Badge variant={overview?.account.isLoggedIn ? "default" : "outline"}>
+              {overview?.account.isLoggedIn ? "Cookie aktiv" : "Kein aktiver Cookie"}
+            </Badge>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {overview?.account.cookieCount ?? 0} Cookies • {overview?.account.validityDuration ?? "n/a"}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Letzte Validierung</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="font-semibold">
+              {formatDate(overview?.account.lastValidated)}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Nächster Ablauf: {formatDate(overview?.account.nextExpiry)}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <LogIn className="h-5 w-5 text-blue-600" />
-              Login to Kleinanzeigen
+              <LogIn className="h-5 w-5 text-primary" />
+              Login starten
             </CardTitle>
             <CardDescription>
-              Enter your credentials to authenticate with the system
+              Startet die vorhandene Browser-Automation und speichert neue Cookies.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="login-email">Email Address</Label>
+                <Label htmlFor="login-email">Email</Label>
                 <Input
                   id="login-email"
                   type="email"
-                  placeholder="your@email.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(event) => setEmail(event.target.value)}
                   required
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="login-password">Password</Label>
+                <Label htmlFor="login-password">Passwort</Label>
                 <Input
                   id="login-password"
                   type="password"
-                  placeholder="Enter your password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(event) => setPassword(event.target.value)}
                   required
                 />
               </div>
               <Button
                 type="submit"
                 disabled={loading || !email.trim() || !password.trim()}
-                className="w-full bg-blue-600 hover:bg-blue-700"
+                className="w-full"
               >
                 {loading ? (
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
-                  <Shield className="h-4 w-4 mr-2" />
+                  <Shield className="mr-2 h-4 w-4" />
                 )}
-                {loading ? "Logging in..." : "Login"}
+                Login ausfuehren
               </Button>
             </form>
           </CardContent>
         </Card>
 
-        {/* Login Check */}
-        <Card className="border-l-4 border-l-green-500">
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-green-600" />
-              Check Login Status
+              <CheckCircle className="h-5 w-5 text-primary" />
+              Live Login-Check
             </CardTitle>
             <CardDescription>
-              Verify if a user is currently logged in
+              Prueft mit den gespeicherten Cookies direkt gegen Kleinanzeigen, ob der Account wirklich eingeloggt ist.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="check-email">Email Address</Label>
+              <Label htmlFor="check-email">Email</Label>
               <Input
                 id="check-email"
                 type="email"
-                placeholder="user@email.com"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(event) => setEmail(event.target.value)}
               />
             </div>
-            <Button
-              onClick={handleCheckLogin}
-              disabled={loading || !email.trim()}
-              className="w-full bg-green-600 hover:bg-green-700"
-            >
+            <Button onClick={handleCheckLogin} disabled={loading || !email.trim()}>
               {loading ? (
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <CheckCircle className="h-4 w-4 mr-2" />
+                <CheckCircle className="mr-2 h-4 w-4" />
               )}
-              {loading ? "Checking..." : "Check Status"}
+              Jetzt pruefen
             </Button>
+            <p className="text-sm text-muted-foreground">
+              Das ist der aussagekraeftigste Check, weil dafuer eine echte Browser-Session verwendet wird.
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Results Display */}
       {loginResult && (
-        <Card className="border-l-4 border-l-purple-500">
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <User className="h-5 w-5 text-purple-600" />
-              Login Result
+              <User className="h-5 w-5 text-primary" />
+              Letztes Login-Ergebnis
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Badge
-                  variant={loginResult.loggedIn ? "default" : "destructive"}
-                  className="text-sm"
-                >
-                  {loginResult.loggedIn ? "Logged In" : "Not Logged In"}
-                </Badge>
-                {loginResult.needsLogin && (
-                  <Badge variant="outline" className="text-sm">
-                    Password Required
-                  </Badge>
-                )}
+          <CardContent className="space-y-3 text-sm">
+            <Badge
+              variant={
+                loginResult.loggedIn || loginResult.requiresEmailVerification
+                  ? "default"
+                  : "destructive"
+              }
+            >
+              {loginResult.status}
+            </Badge>
+            <div>{loginResult.message}</div>
+            {loginResult.verificationReason && (
+              <div>
+                <span className="font-medium">Verifikationsgrund:</span>{" "}
+                {loginResult.verificationReason}
               </div>
-              <p className="text-sm">{loginResult.message}</p>
-              {loginResult.cookieFile && (
-                <p className="text-xs text-muted-foreground">
-                  Cookie file: {loginResult.cookieFile}
-                </p>
-              )}
-            </div>
+            )}
+            {loginResult.cookieFile && (
+              <div>
+                <span className="font-medium">Cookie-Datei:</span>{" "}
+                {loginResult.cookieFile}
+              </div>
+            )}
+            {loginResult.error && (
+              <div>
+                <span className="font-medium">Fehler:</span> {loginResult.error}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
 
       {checkResult && (
-        <Card className="border-l-4 border-l-orange-500">
+        <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-orange-600" />
-              Login Check Result
+              <Clock className="h-5 w-5 text-primary" />
+              Letzter Live-Check
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Status
-                </p>
-                <Badge
-                  variant={checkResult.loggedIn ? "default" : "destructive"}
-                  className="text-sm"
-                >
-                  {checkResult.loggedIn ? "Logged In" : "Not Logged In"}
-                </Badge>
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Cookie Count
-                </p>
-                <p className="text-lg font-bold">{checkResult.cookieCount}</p>
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Last Validated
-                </p>
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium">
-                      {formatGermanDate(checkResult.lastValidated)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatTimeDifference(checkResult.lastValidated)} ago
-                    </p>
-                  </div>
-                </div>
-              </div>
+          <CardContent className="grid gap-4 md:grid-cols-3 text-sm">
+            <div>
+              <div className="font-medium">Status</div>
+              <Badge variant={checkResult.loggedIn ? "default" : "destructive"}>
+                {checkResult.loggedIn ? "eingeloggt" : "nicht eingeloggt"}
+              </Badge>
             </div>
-            <div className="mt-4 p-3 bg-muted rounded-lg">
-              <p className="text-sm">{checkResult.message}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Checked at: {formatGermanDate(checkResult.timestamp)}
-              </p>
+            <div>
+              <div className="font-medium">Cookies in Datei</div>
+              <div>{checkResult.cookiesInFile ?? 0}</div>
             </div>
+            <div>
+              <div className="font-medium">Geprueft um</div>
+              <div>{formatDate(checkResult.timestamp)}</div>
+            </div>
+            {checkResult.lastValidated && (
+              <div className="md:col-span-3 text-muted-foreground">
+                Letzte Backend-Validierung: {formatDate(checkResult.lastValidated)}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
-
-      {/* Information Panel */}
-      <Card className="border-l-4 border-l-gray-500">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-gray-600" />
-            How It Works
-          </CardTitle>
-          <CardDescription>
-            Understanding the authentication process
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div className="space-y-2">
-              <h4 className="font-medium text-gray-600">Login Process</h4>
-              <ul className="text-muted-foreground space-y-1">
-                <li>• Opens Chrome browser visibly</li>
-                <li>• Navigates to Kleinanzeigen login page</li>
-                <li>• Enters credentials automatically</li>
-                <li>• Saves cookies for future use</li>
-              </ul>
-            </div>
-            <div className="space-y-2">
-              <h4 className="font-medium text-gray-600">Cookie Validation</h4>
-              <ul className="text-muted-foreground space-y-1">
-                <li>• Checks existing cookies first</li>
-                <li>• Validates login status</li>
-                <li>• Shows detailed cookie information</li>
-                <li>• Handles expired cookies gracefully</li>
-              </ul>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

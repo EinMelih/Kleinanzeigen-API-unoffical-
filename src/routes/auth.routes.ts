@@ -41,7 +41,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         console.log("Starting login process...");
         const result = await performLogin({ email, password });
 
-        if (result.ok) {
+        if (result.ok && result.loggedIn) {
           return reply.send({
             status: "login_successful",
             message: "Login completed successfully",
@@ -58,6 +58,20 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
             requiresEmailVerification: true,
             verificationReason: result.verificationReason,
             cookieFile: result.cookieFile,
+          });
+        } else if (result.didSubmit) {
+          return reply.status(401).send({
+            status: "login_not_verified",
+            message:
+              result.message ||
+              "Login form was submitted, but no authenticated session was detected",
+            loggedIn: false,
+            needsLogin: true,
+            didSubmit: true,
+            cookieFile: result.cookieFile,
+            error:
+              result.error ||
+              "Kleinanzeigen session could not be verified after submitting credentials",
           });
         } else {
           return reply.status(400).send({
