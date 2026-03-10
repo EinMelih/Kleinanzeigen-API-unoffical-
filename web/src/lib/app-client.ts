@@ -3,7 +3,13 @@ import type {
   AppConfigUpdatePayload,
   AppOverview,
   HealthResponse,
+  ItemsResponse,
   MessageHealthResponse,
+  MessagesResponse,
+  ProfileMutationResponse,
+  ProfileResponse,
+  RadarResponse,
+  SendMessageApiResponse,
   TelegramTestResponse,
 } from "./app-types";
 
@@ -47,6 +53,42 @@ export const appClient = {
     requestJson<TelegramTestResponse>("/app/telegram/test", {
       method: "POST",
       body: JSON.stringify({ message }),
+    }),
+  getItems: () => requestJson<ItemsResponse>("/app/items"),
+  getMessages: () => requestJson<MessagesResponse>("/app/messages"),
+  refreshMessages: (email?: string) =>
+    requestJson<MessagesResponse>("/app/messages/refresh", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+  getRadar: () => requestJson<RadarResponse>("/app/radar"),
+  markNotificationRead: (id: string) =>
+    requestJson<{ status: string }>(`/app/notifications/${id}/read`, {
+      method: "POST",
+    }),
+  deleteNotification: (id: string) =>
+    requestJson<{ status: string; message: string }>(`/app/notifications/${id}`, {
+      method: "DELETE",
+    }),
+  clearNotifications: () =>
+    requestJson<{ status: string; message: string }>("/app/notifications", {
+      method: "DELETE",
+    }),
+  getProfile: () => requestJson<ProfileResponse>("/app/profile"),
+  updateProfile: (payload: { displayName?: string; summary?: string }) =>
+    requestJson<ProfileMutationResponse>("/app/profile", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  syncProfile: (email?: string) =>
+    requestJson<ProfileMutationResponse>("/app/profile/sync", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+  sendMessage: (payload: { email: string; articleId: string; message: string; receiverId?: string }) =>
+    requestJson<SendMessageApiResponse>("/message/send", {
+      method: "POST",
+      body: JSON.stringify(payload),
     }),
   getHealth: () => requestJson<HealthResponse>("/health"),
   getMessageHealth: () => requestJson<MessageHealthResponse>("/message/health"),

@@ -35,6 +35,7 @@ const EMPTY_FORM: AppConfigUpdatePayload = {
   telegramNotificationsEnabled: false,
   notifyOnSuccessfulLogin: true,
   notifyOnSearchRuns: true,
+  manualModeOnly: true,
 };
 
 export default function Settings() {
@@ -62,6 +63,7 @@ export default function Settings() {
           response.config.telegramNotificationsEnabled,
         notifyOnSuccessfulLogin: response.config.notifyOnSuccessfulLogin,
         notifyOnSearchRuns: response.config.notifyOnSearchRuns,
+        manualModeOnly: response.config.manualModeOnly,
       });
     } catch (error) {
       toast({
@@ -196,6 +198,21 @@ export default function Settings() {
               />
               Bei erfolgreichen Logins spaeter Telegram-Benachrichtigung senden
             </label>
+            <label className="flex items-center gap-3 text-sm">
+              <input
+                type="checkbox"
+                checked={form.manualModeOnly}
+                onChange={(event) =>
+                  updateField("manualModeOnly", event.target.checked)
+                }
+              />
+              Manual-only mode aktivieren und automatische Live-Requests blockieren
+            </label>
+            <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-muted-foreground">
+              Empfohlen nach IP-Sperren: Automatischer Login, Search, Messaging und
+              Cookie-Refresh bleiben serverseitig aus, bis du den Modus bewusst wieder
+              deaktivierst.
+            </div>
           </CardContent>
         </Card>
 
@@ -310,6 +327,10 @@ export default function Settings() {
             <div>
               <span className="font-medium">AI konfiguriert:</span>{" "}
               {config?.ai.configured ? "Ja" : "Nein"}
+            </div>
+            <div>
+              <span className="font-medium">Manual-only mode:</span>{" "}
+              {config?.manualModeOnly ? "Ja" : "Nein"}
             </div>
           </div>
           <div className="space-y-2 text-sm">

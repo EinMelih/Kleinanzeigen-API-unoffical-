@@ -2,9 +2,11 @@ import * as fs from "fs";
 import * as path from "path";
 import puppeteer, { Browser, Page } from "puppeteer";
 import { LoginCredentials, LoginResult } from "../../shared/types";
-import { emailToSlug, randomDelay } from "../../shared/utils";
+import { randomDelay } from "../../shared/utils";
 import { ChromeService } from "../services/chromeService";
+import { ManualModeService } from "../services/manual-mode.service";
 import { PlatformGuardService } from "../services/platform-guard.service";
+import { SessionProfileService } from "../services/session-profile.service";
 
 // Login configuration
 const LOGIN_CONFIG = {
@@ -191,10 +193,29 @@ export async function performLogin(
   let browser: Browser | null = null;
   let page: Page | null = null;
   const platformGuard = new PlatformGuardService();
+  const sessionProfiles = new SessionProfileService();
+  const manualMode = new ManualModeService();
 
   try {
     const { email, password } = credentials;
     const guardStatus = platformGuard.isBlocked();
+
+    if (manualMode.isEnabled()) {
+      const profileStatus = await sessionProfiles.getStatus(email);
+      return {
+        ok: false,
+        loggedIn: false,
+        didSubmit: false,
+        cookieFile: sessionProfiles.getCookiePath(email),
+        debugPort: profileStatus.debugPort,
+        profileDir: profileStatus.profileDir,
+        sessionMode: "manual",
+        manualLoginRequired: true,
+        message:
+          "Manual-only mode is enabled. Automatic login is disabled. Start the manual profile login flow instead.",
+        error: "MANUAL_MODE_ONLY",
+      };
+    }
 
     if (guardStatus.blocked) {
       return {
@@ -206,13 +227,33 @@ export async function performLogin(
     }
 
     // Check if we have valid cookies first
-    const cookieFileName = `cookies-${emailToSlug(email)}.json`;
-    const cookiePath = path.join(
-      process.cwd(),
-      "data",
-      "cookies",
-      cookieFileName
-    );
+    const cookiePath = sessionProfiles.getCookiePath(email);
+    const profileStatus = await sessionProfiles.getStatus(email);
+
+    if (profileStatus.profileExists) {
+      console.log(
+        `Found persistent browser profile for ${email}, verifying session...`
+      );
+
+      const profileResult = await sessionProfiles.verifySession(email, {
+        startIfNeeded: true,
+        saveCookies: true,
+        source: "auth:profile-reuse",
+      });
+
+      if (profileResult.loggedIn) {
+        return {
+          ok: true,
+          loggedIn: true,
+          didSubmit: false,
+          cookieFile: cookiePath,
+          debugPort: profileResult.status.debugPort,
+          profileDir: profileResult.status.profileDir,
+          sessionMode: "profile_reuse",
+          message: "Login successful with persistent browser profile",
+        };
+      }
+    }
 
     if (fs.existsSync(cookiePath)) {
       console.log(
@@ -242,6 +283,7 @@ export async function performLogin(
               console.log(
                 "Login successful with existing cookies - no password needed!"
               );
+              sessionProfiles.recordSessionState(email, { loggedIn: true });
               return result;
             }
             console.log(
@@ -257,11 +299,26 @@ export async function performLogin(
       }
     }
 
-    // First setup Chrome with remote debugging
-    const chromeService = new ChromeService();
-    const chromeResult = await chromeService.setupChrome({ saveToEnv: true });
+    if (!password) {
+      return {
+        ok: false,
+        loggedIn: false,
+        didSubmit: false,
+        cookieFile: cookiePath,
+        debugPort: profileStatus.debugPort,
+        profileDir: profileStatus.profileDir,
+        sessionMode: "manual",
+        manualLoginRequired: true,
+        message:
+          "No active session found. Start the manual login flow and reuse the persistent browser profile.",
+        error: "MANUAL_LOGIN_REQUIRED",
+      };
+    }
 
-    if (!chromeResult.success || !chromeResult.webSocketUrl) {
+    // First setup Chrome with remote debugging
+    const chromeResult = await sessionProfiles.ensureProfileBrowser(email);
+
+    if (!chromeResult.webSocketUrl) {
       return {
         ok: false,
         loggedIn: false,
@@ -425,6 +482,9 @@ export async function performLogin(
         loggedIn: false,
         didSubmit: true,
         cookieFile: cookiePath,
+        debugPort: chromeResult.debugPort,
+        profileDir: chromeResult.profileDir,
+        sessionMode: "password_login",
         requiresEmailVerification: true,
         verificationReason: twoFAResult.reason,
         message: twoFAResult.message || "Email verification required",
@@ -473,13 +533,31 @@ export async function performLogin(
       fs.mkdirSync(cookiesDir, { recursive: true });
     }
     fs.writeFileSync(cookiePath, JSON.stringify(cookies, null, 2));
+    sessionProfiles.recordSessionState(email, {
+      loggedIn,
+      lastError: loggedIn ? null : "Login form was submitted, but no authenticated session was detected",
+    });
 
     return {
       ok: loggedIn,
       loggedIn,
       didSubmit,
       cookieFile: cookiePath,
-      message: loggedIn ? "Login successful" : "Login attempted",
+      debugPort: chromeResult.debugPort,
+      profileDir: chromeResult.profileDir,
+      sessionMode: "password_login",
+      message: loggedIn
+        ? "Login successful"
+        : didSubmit
+        ? "Login attempted"
+        : "Login form was not found or could not be submitted",
+      ...(loggedIn
+        ? {}
+        : {
+            error: didSubmit
+              ? "Kleinanzeigen session could not be verified after submitting credentials"
+              : "Login form not found or no authenticated session detected",
+          }),
     };
   } catch (error) {
     console.error("Login error:", error);

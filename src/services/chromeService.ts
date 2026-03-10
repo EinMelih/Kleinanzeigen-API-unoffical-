@@ -20,7 +20,7 @@ export class ChromeService {
     this.userDataDir = userDataDir;
   }
 
-  getChromeStartCommand(): string {
+  getChromeStartCommand(startUrl?: string): string {
     const chromePath =
       "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
     const args = [
@@ -30,7 +30,8 @@ export class ChromeService {
       "--disable-default-apps",
     ];
 
-    return `"${chromePath}" ${args.join(" ")}`;
+    const quotedStartUrl = startUrl ? ` "${startUrl}"` : "";
+    return `"${chromePath}" ${args.join(" ")}${quotedStartUrl}`;
   }
 
   async checkChromeStatus(): Promise<ChromeStatus> {
@@ -75,6 +76,38 @@ export class ChromeService {
     }
   }
 
+  async waitForWebSocketEndpoint(
+    timeoutMs: number = 15000,
+    pollIntervalMs: number = 500
+  ): Promise<string | null> {
+    const start = Date.now();
+
+    while (Date.now() - start < timeoutMs) {
+      const endpoint = await this.getWebSocketEndpoint();
+      if (endpoint) {
+        return endpoint;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+
+    return null;
+  }
+
+  async openUrlInBrowser(webSocketUrl: string, url: string): Promise<void> {
+    const puppeteer = await import("puppeteer");
+    const browser = await puppeteer.connect({
+      browserWSEndpoint: webSocketUrl,
+      defaultViewport: null,
+    });
+
+    const page = await browser.newPage();
+    await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: 30000,
+    });
+  }
+
   async saveToEnvFile(webSocketUrl: string): Promise<boolean> {
     try {
       const envPath = path.join(process.cwd(), ".env");
@@ -113,11 +146,12 @@ export class ChromeService {
 
       // Check if Chrome is already running
       const status = await this.checkChromeStatus();
+      const wasAlreadyRunning = status.isRunning;
 
       if (!status.isRunning) {
         console.log("Chrome not running, starting...");
 
-        const command = this.getChromeStartCommand();
+        const command = this.getChromeStartCommand(options.startUrl);
         exec(command, (error) => {
           if (error) {
             console.log("Error starting Chrome:", error.message);
@@ -129,13 +163,17 @@ export class ChromeService {
       }
 
       // Get WebSocket endpoint
-      const webSocketUrl = await this.getWebSocketEndpoint();
+      const webSocketUrl = await this.waitForWebSocketEndpoint();
 
       if (!webSocketUrl) {
         return {
           success: false,
           message: "Could not get WebSocket endpoint",
         };
+      }
+
+      if (options.startUrl && wasAlreadyRunning) {
+        await this.openUrlInBrowser(webSocketUrl, options.startUrl);
       }
 
       // Save to .env if requested

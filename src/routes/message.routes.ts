@@ -4,6 +4,7 @@
  */
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { messageService } from "../services/message.service";
+import { ManualModeService } from "../services/manual-mode.service";
 import { SendMessageRequest } from "../types/message.types";
 
 interface SendMessageBody {
@@ -18,6 +19,7 @@ interface GetConversationsParams {
 }
 
 export async function messageRoutes(app: FastifyInstance): Promise<void> {
+    const manualMode = new ManualModeService();
     /**
      * POST /message/send
      * Send a message to a seller for a specific article
@@ -29,6 +31,18 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
             request: FastifyRequest<{ Body: SendMessageBody }>,
             reply: FastifyReply
         ) => {
+            if (manualMode.isEnabled()) {
+                return reply.status(403).send({
+                    success: false,
+                    status: "manual_mode_only",
+                    message: manualMode.getBlockedMessage(
+                        "Automated seller messaging",
+                        "Messaging stays disabled until you leave manual-only mode."
+                    ),
+                    error: "MANUAL_MODE_ONLY",
+                });
+            }
+
             const { email, articleId, receiverId, message } = request.body;
 
             // Validation
@@ -92,6 +106,18 @@ export async function messageRoutes(app: FastifyInstance): Promise<void> {
             request: FastifyRequest<{ Params: GetConversationsParams }>,
             reply: FastifyReply
         ) => {
+            if (manualMode.isEnabled()) {
+                return reply.status(403).send({
+                    success: false,
+                    status: "manual_mode_only",
+                    message: manualMode.getBlockedMessage(
+                        "Automated conversation retrieval",
+                        "Messaging-related live requests stay disabled until you leave manual-only mode."
+                    ),
+                    error: "MANUAL_MODE_ONLY",
+                });
+            }
+
             const { email } = request.params;
 
             if (!email) {

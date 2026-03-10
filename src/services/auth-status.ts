@@ -6,6 +6,8 @@ import {
   UserAuthStatus,
 } from "../../shared/types";
 import { CookieValidator } from "./cookies-validation";
+import { ManualModeService } from "./manual-mode.service";
+import { SessionProfileService } from "./session-profile.service";
 
 // Check if user is logged in
 export async function checkLoginStatus(email: string): Promise<LoginStatus> {
@@ -13,6 +15,28 @@ export async function checkLoginStatus(email: string): Promise<LoginStatus> {
 
   const cookieFileName = `cookies-${email.replace(/[^a-zA-Z0-9]/g, "_")}.json`;
   const cookiePath = path.join(process.cwd(), "data", "cookies", cookieFileName);
+  const sessionProfiles = new SessionProfileService();
+  const manualMode = new ManualModeService();
+  const profileStatus = await sessionProfiles.getStatus(email);
+
+  if (manualMode.isEnabled()) {
+    return {
+      isLoggedIn: profileStatus.state === "authenticated",
+      needsLogin: profileStatus.state !== "authenticated",
+    };
+  }
+
+  if (profileStatus.profileExists) {
+    const sessionStatus = await sessionProfiles.verifySession(email, {
+      startIfNeeded: true,
+      saveCookies: true,
+      source: "auth:status-check",
+    });
+
+    if (sessionStatus.loggedIn) {
+      return { isLoggedIn: true, needsLogin: false };
+    }
+  }
 
   if (!fs.existsSync(cookiePath)) {
     return { isLoggedIn: false, needsLogin: true };

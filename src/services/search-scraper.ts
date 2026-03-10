@@ -1,4 +1,5 @@
 import puppeteer, { Browser, Page } from "puppeteer";
+import { ManualModeService } from "./manual-mode.service";
 import { SearchParser } from "./search-parser.service";
 import { PlatformGuardService } from "./platform-guard.service";
 import { SellerInfo } from "../types/search.types";
@@ -50,14 +51,41 @@ export class SearchScraper {
   private browser: Browser | null = null;
   private readonly debugPort: number;
   private readonly platformGuard: PlatformGuardService;
+  private readonly manualMode: ManualModeService;
 
   constructor(debugPort: number = 9222) {
     this.debugPort = debugPort;
     this.platformGuard = new PlatformGuardService();
+    this.manualMode = new ManualModeService();
   }
 
   private wait(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private isNavigationTimeout(error: unknown): boolean {
+    return (
+      error instanceof Error &&
+      error.message.toLowerCase().includes("navigation timeout")
+    );
+  }
+
+  private async navigateWithFallback(page: Page, url: string): Promise<void> {
+    try {
+      await page.goto(url, {
+        waitUntil: "domcontentloaded",
+        timeout: 60000,
+      });
+    } catch (error) {
+      if (!this.isNavigationTimeout(error)) {
+        throw error;
+      }
+    }
+
+    await page.waitForSelector("body", {
+      timeout: 5000,
+    }).catch(() => undefined);
+    await this.wait(1500);
   }
 
   private async connectToBrowser(): Promise<Browser> {
@@ -254,7 +282,26 @@ export class SearchScraper {
     let totalAvailable = 0;
     let totalPages = 1;
     let pagesScraped = 0;
+    const manualMode = this.manualMode.getState();
     const guardStatus = this.platformGuard.isBlocked();
+
+    if (manualMode.enabled) {
+      return {
+        success: false,
+        query: options.query,
+        totalAvailable,
+        totalPages,
+        pagesScraped,
+        articlesScraped: 0,
+        articles: [],
+        searchUrl,
+        scrapedAt: new Date().toISOString(),
+        error: this.manualMode.getBlockedMessage(
+          "Automated search/scrape",
+          "Keep live Kleinanzeigen requests manual for now."
+        ),
+      };
+    }
 
     if (guardStatus.blocked) {
       return {
@@ -285,10 +332,7 @@ export class SearchScraper {
 
       // Navigate to first search page
       console.log("🌐 Navigating to Kleinanzeigen...");
-      await page.goto(searchUrl, {
-        waitUntil: "networkidle2",
-        timeout: 30000,
-      });
+      await this.navigateWithFallback(page, searchUrl);
 
       const initialBlock = await this.platformGuard.inspectKleinanzeigenPage(
         page,
@@ -349,11 +393,7 @@ export class SearchScraper {
           if (currentPage > 1) {
             const pageUrl = this.buildSearchUrl(options, currentPage);
             console.log(`📄 Navigating to page ${currentPage}...`);
-            await page.goto(pageUrl, {
-              waitUntil: "domcontentloaded", // Faster than networkidle2
-              timeout: 60000, // 60 seconds timeout
-            });
-            await this.wait(2000); // Wait for content to load
+            await this.navigateWithFallback(page, pageUrl);
 
             const pagedBlock = await this.platformGuard.inspectKleinanzeigenPage(
               page,
@@ -602,10 +642,7 @@ export class SearchScraper {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
       );
 
-      await detailPage.goto(articleUrl, {
-        waitUntil: "networkidle2",
-        timeout: 15000,
-      });
+      await this.navigateWithFallback(detailPage, articleUrl);
 
       const detailBlock = await this.platformGuard.inspectKleinanzeigenPage(
         detailPage,

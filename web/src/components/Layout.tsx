@@ -84,28 +84,28 @@ const PAGE_STATUS: Record<
       "Account und Telegram sind bearbeitbar, die Werte landen aktuell in .env plus lokaler JSON-Datei statt Datenbank.",
   },
   "/items": {
-    status: "preview",
-    title: "Items ist aktuell nur UI-Vorschau",
+    status: "live",
+    title: "Items nutzt jetzt den lokalen Listing-Store",
     description:
-      "Die Seite ist sichtbar, aber noch nicht mit echten Backend-Daten oder Persistenz verdrahtet.",
+      "Search-, Scrape- und Message-Treffer werden lokal gespeichert und hier als echte Daten angezeigt.",
   },
   "/messages": {
-    status: "preview",
-    title: "Messages ist noch UI-first",
+    status: "live",
+    title: "Messages nutzt echte Conversation-Daten",
     description:
-      "Es gibt echte Message-Endpunkte, die Seite selbst nutzt aber noch Mock-Daten und dient als Vorschau.",
+      "Lokale Conversation-Historie plus manueller Live-Refresh gegen das Kleinanzeigen-Postfach.",
   },
   "/radar": {
-    status: "preview",
-    title: "Radar ist noch nicht live verdrahtet",
+    status: "live",
+    title: "Radar ist an den Event-Store gekoppelt",
     description:
-      "Die UI zeigt die geplante Richtung. Automatische Notifies und Regeln kommen spaeter.",
+      "Notifications fuer Search, Telegram, Profil-Sync und Messaging kommen aus echten lokalen Events.",
   },
   "/profile": {
-    status: "preview",
-    title: "Profil ist noch Prototyp",
+    status: "live",
+    title: "Profil zeigt echten Runtime-Status",
     description:
-      "Die Seite ist nur visuell vorbereitet und noch nicht an eine Persistenzschicht angebunden.",
+      "Lokaler Store, gespeicherte Suchlaeufe und optionaler Sync gegen das eingeloggte Profil.",
   },
 };
 

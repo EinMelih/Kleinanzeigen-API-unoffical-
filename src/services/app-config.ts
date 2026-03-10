@@ -9,6 +9,7 @@ export interface StoredAppConfig {
   telegramNotificationsEnabled: boolean;
   notifyOnSuccessfulLogin: boolean;
   notifyOnSearchRuns: boolean;
+  manualModeOnly: boolean;
   updatedAt: string;
 }
 
@@ -49,6 +50,7 @@ function createDefaultConfig(): StoredAppConfig {
     telegramNotificationsEnabled: Boolean(telegramBotToken && telegramChatId),
     notifyOnSuccessfulLogin: true,
     notifyOnSearchRuns: true,
+    manualModeOnly: process.env["MANUAL_MODE_ONLY"] !== "false",
     updatedAt: new Date().toISOString(),
   };
 }

@@ -88,6 +88,30 @@ export async function serverController(fastify: FastifyInstance) {
         // Wait a moment for Chrome to start
         await new Promise((resolve) => setTimeout(resolve, 3000));
 
+        if (!chromeProcess || chromeProcess.exitCode !== null) {
+          chromeProcess = null;
+          return reply.status(500).send({
+            success: false,
+            message: "Chrome browser exited before the debugging port was ready",
+          });
+        }
+
+        let isPortResponding = false;
+        try {
+          const response = await fetch(`http://localhost:${chromePort}/json/version`);
+          isPortResponding = response.ok;
+        } catch {
+          isPortResponding = false;
+        }
+
+        if (!isPortResponding) {
+          return reply.status(500).send({
+            success: false,
+            message: "Chrome browser started, but the debugging port is not responding",
+            port: chromePort,
+          });
+        }
+
         // If password is provided, we can trigger a login process
         let message = `Chrome browser started successfully on port ${chromePort}`;
         if (password) {

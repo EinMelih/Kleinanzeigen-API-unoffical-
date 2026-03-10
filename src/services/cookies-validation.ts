@@ -3,7 +3,9 @@ import * as path from "path";
 import puppeteer, { Browser, Page } from "puppeteer";
 import { getGermanDate } from "../../shared/utils";
 import { ChromeService } from "./chromeService";
+import { ManualModeService } from "./manual-mode.service";
 import { PlatformGuardService } from "./platform-guard.service";
+import { SessionProfileService } from "./session-profile.service";
 
 // Configuration for cookie validation
 const COOKIE_CONFIG = {
@@ -57,10 +59,14 @@ export interface CookieDetail {
 export class CookieValidator {
   private readonly cookiesDir: string;
   private readonly platformGuard: PlatformGuardService;
+  private readonly sessionProfiles: SessionProfileService;
+  private readonly manualMode: ManualModeService;
 
   constructor() {
     this.cookiesDir = path.join(process.cwd(), "data", "cookies");
     this.platformGuard = new PlatformGuardService();
+    this.sessionProfiles = new SessionProfileService();
+    this.manualMode = new ManualModeService();
   }
 
   // Get all cookie files
@@ -211,6 +217,46 @@ export class CookieValidator {
 
     try {
       const email = this.extractEmailFromFilename(cookiePath);
+      const guardStatus = this.platformGuard.isBlocked();
+
+      if (guardStatus.blocked) {
+        return {
+          isValid: false,
+          email,
+          cookieCount: 0,
+          error: this.platformGuard.getBlockMessage(guardStatus.state),
+        };
+      }
+
+      if (this.manualMode.isEnabled()) {
+        return {
+          isValid: false,
+          email,
+          cookieCount: 0,
+          error:
+            "Manual-only mode is enabled. Live cookie/session tests are disabled.",
+        };
+      }
+
+      const profileStatus = await this.sessionProfiles.getStatus(email);
+
+      if (profileStatus.profileExists) {
+        const sessionResult = await this.sessionProfiles.verifySession(email, {
+          startIfNeeded: true,
+          saveCookies: true,
+          source: "cookies:profile-session",
+        });
+
+        if (sessionResult.loggedIn) {
+          return {
+            isValid: true,
+            email,
+            cookieCount: sessionResult.cookieCount,
+            lastValidated: getGermanDate(new Date()),
+          };
+        }
+      }
+
       const cookies = JSON.parse(fs.readFileSync(cookiePath, "utf8"));
 
       if (!Array.isArray(cookies) || cookies.length === 0) {

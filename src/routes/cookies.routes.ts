@@ -7,8 +7,10 @@ import * as fs from "fs";
 import * as path from "path";
 import { CookieRefreshService } from "../services/cookies-auto-refresh";
 import { CookieValidator } from "../services/cookies-validation";
+import { ManualModeService } from "../services/manual-mode.service";
 
 export async function cookieRoutes(app: FastifyInstance): Promise<void> {
+  const manualMode = new ManualModeService();
   // GET /cookies/status - Check cookie validation status
   app.get("/cookies/status", async (request, reply) => {
     try {
@@ -101,6 +103,16 @@ export async function cookieRoutes(app: FastifyInstance): Promise<void> {
     "/cookies/test/:email",
     async (request, reply) => {
       try {
+        if (manualMode.isEnabled()) {
+          return reply.status(403).send({
+            status: "manual_mode_only",
+            message: manualMode.getBlockedMessage(
+              "Live cookie/session test",
+              "Use the manual profile login flow instead."
+            ),
+          });
+        }
+
         const { email } = request.params;
         const validator = new CookieValidator();
         const cookiePath = path.join(
@@ -175,6 +187,16 @@ export async function cookieRoutes(app: FastifyInstance): Promise<void> {
     "/cookies/refresh/:email",
     async (request, reply) => {
       try {
+        if (manualMode.isEnabled()) {
+          return reply.status(403).send({
+            status: "manual_mode_only",
+            message: manualMode.getBlockedMessage(
+              "Automatic cookie refresh",
+              "Use the manual profile login flow instead."
+            ),
+          });
+        }
+
         const { email } = request.params;
         const refreshService = new CookieRefreshService();
         const result = await refreshService.refreshUserCookies(email);
@@ -197,6 +219,16 @@ export async function cookieRoutes(app: FastifyInstance): Promise<void> {
   // POST /cookies/refresh-all - Refresh all user cookies
   app.post("/cookies/refresh-all", async (request, reply) => {
     try {
+      if (manualMode.isEnabled()) {
+        return reply.status(403).send({
+          status: "manual_mode_only",
+          message: manualMode.getBlockedMessage(
+            "Automatic cookie refresh",
+            "Use the manual profile login flow instead."
+          ),
+        });
+      }
+
       const refreshService = new CookieRefreshService();
       const results = await refreshService.refreshAllCookies();
 
@@ -243,6 +275,16 @@ export async function cookieRoutes(app: FastifyInstance): Promise<void> {
   // POST /cookies/auto-refresh/start - Start automatic refresh
   app.post("/cookies/auto-refresh/start", async (request, reply) => {
     try {
+      if (manualMode.isEnabled()) {
+        return reply.status(403).send({
+          status: "manual_mode_only",
+          message: manualMode.getBlockedMessage(
+            "Auto-refresh",
+            "Leave manual-only mode before enabling background refresh."
+          ),
+        });
+      }
+
       const body = request.body as { interval?: string | number };
       const interval = body?.interval;
       const intervalHours =

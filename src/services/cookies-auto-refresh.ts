@@ -1,6 +1,7 @@
 import { getGermanDate } from "../../shared/utils";
 import { performLogin } from "../workers/auth-login";
 import { CookieValidator } from "./cookies-validation";
+import { ManualModeService } from "./manual-mode.service";
 
 export interface RefreshResult {
   success: boolean;
@@ -12,6 +13,7 @@ export interface RefreshResult {
 
 export class CookieRefreshService {
   private readonly cookieValidator: CookieValidator;
+  private readonly manualMode: ManualModeService;
   private refreshInterval: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
   private interval: number = 0.25;
@@ -19,10 +21,20 @@ export class CookieRefreshService {
 
   constructor() {
     this.cookieValidator = new CookieValidator();
+    this.manualMode = new ManualModeService();
   }
 
   // Start automatic cookie refresh
   startAutoRefresh(intervalHours: number = 12): void {
+    if (this.manualMode.isEnabled()) {
+      throw new Error(
+        this.manualMode.getBlockedMessage(
+          "Auto-refresh",
+          "Leave manual-only mode before enabling background refresh."
+        )
+      );
+    }
+
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval);
     }
@@ -70,6 +82,17 @@ export class CookieRefreshService {
   // Refresh cookies for specific user
   async refreshUserCookies(email: string): Promise<RefreshResult> {
     try {
+      if (this.manualMode.isEnabled()) {
+        return {
+          success: false,
+          message: this.manualMode.getBlockedMessage(
+            "Automatic cookie refresh",
+            "Use the manual profile login flow instead."
+          ),
+          refreshedAt: getGermanDate(new Date()),
+        };
+      }
+
       console.log(`Refreshing cookies for ${email}...`);
 
       // Check current cookie status

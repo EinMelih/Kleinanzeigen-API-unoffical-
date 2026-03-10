@@ -107,6 +107,11 @@ C:\temp\chrome-debug/
 
 # Cookie files (sensitive data)
 data/cookies/*.json
+data/app-config.json
+data/app-state.json
+data/platform-guard.json
+data/browser-profiles/
+data/oauth-tokens/
 
 # Old structure (to be removed)
 apps/

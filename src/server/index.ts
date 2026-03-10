@@ -7,6 +7,10 @@
 import "dotenv/config";
 import Fastify, { FastifyInstance } from "fastify";
 import { CookieValidator } from "../services/cookies-validation";
+import { getAppConfigSummary } from "../services/app-config";
+import { ManualModeService } from "../services/manual-mode.service";
+import { PlatformGuardService } from "../services/platform-guard.service";
+import { SessionProfileService } from "../services/session-profile.service";
 import { serverController } from "../controllers/server-controller";
 
 // Import all routes
@@ -33,7 +37,15 @@ const app: FastifyInstance = Fastify({
 app.get("/health", async () => {
   try {
     const validator = new CookieValidator();
+    const config = getAppConfigSummary();
+    const manualMode = new ManualModeService().getState();
+    const platformGuard = new PlatformGuardService();
+    const sessionProfiles = new SessionProfileService();
     const stats = await validator.getCookieStats();
+    const platformStatus = platformGuard.isBlocked();
+    const sessionProfile = config.accountEmail
+      ? await sessionProfiles.getStatus(config.accountEmail)
+      : null;
 
     return {
       ok: true,
@@ -51,6 +63,25 @@ app.get("/health", async () => {
         status: "running",
         port: 9222,
       },
+      runtime: {
+        manualModeOnly: manualMode.enabled,
+        message: manualMode.message,
+      },
+      account: {
+        email: config.accountEmail,
+        configured: config.accountEmail.trim().length > 0,
+        isLoggedIn: sessionProfile?.state === "authenticated",
+        sessionState: sessionProfile?.state ?? "not_started",
+        debugPort: sessionProfile?.debugPort,
+        chromeRunning: sessionProfile?.chromeRunning ?? false,
+        lastVerifiedAt: sessionProfile?.lastVerifiedAt,
+        lastSuccessfulLoginAt: sessionProfile?.lastSuccessfulLoginAt,
+        lastError: sessionProfile?.lastError,
+      },
+      platformGuard: {
+        blocked: platformStatus.blocked,
+        state: platformStatus.state ?? null,
+      },
     };
   } catch {
     return {
@@ -59,6 +90,21 @@ app.get("/health", async () => {
       timestamp: new Date().toISOString(),
       cookies: { error: "Failed to get cookie stats" },
       chrome: { status: "running", port: 9222 },
+      runtime: {
+        manualModeOnly: true,
+        message: "Health check fallback mode",
+      },
+      account: {
+        email: "",
+        configured: false,
+        isLoggedIn: false,
+        sessionState: "error",
+        chromeRunning: false,
+      },
+      platformGuard: {
+        blocked: false,
+        state: null,
+      },
     };
   }
 });

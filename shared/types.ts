@@ -15,6 +15,7 @@ export interface ChromeSetupResult {
 export interface ChromeSetupOptions {
   saveToEnv?: boolean;
   retryCount?: number;
+  startUrl?: string;
 }
 
 // Authentication related types
@@ -28,11 +29,15 @@ export interface LoginResult {
   loggedIn: boolean;
   didSubmit: boolean;
   cookieFile?: string;
+  debugPort?: number;
+  profileDir?: string;
+  sessionMode?: "cookies" | "password_login" | "profile_reuse" | "manual";
   message?: string;
   error?: string;
   // 2FA / Email Verification
   requiresEmailVerification?: boolean;
   verificationReason?: '2fa_new_device' | '2fa_new_ip' | '2fa_unknown' | undefined;
+  manualLoginRequired?: boolean;
 }
 
 export interface LoginStatus {

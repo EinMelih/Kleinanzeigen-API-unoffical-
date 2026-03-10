@@ -6,6 +6,8 @@ import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import * as fs from "fs";
 import * as path from "path";
 import { LoginRequestBody } from "../../shared/types";
+import { AppStateService } from "../services/app-state.service";
+import { loadAppConfig } from "../services/app-config";
 import {
   checkAllUsersAuthStatus,
   checkLoginStatus,
@@ -13,6 +15,9 @@ import {
 import { CookieValidator } from "../services/cookies-validation";
 import { EmailVerificationService } from "../services/email-verification";
 import { BrowserEmailVerificationService } from "../services/email-verification-browser";
+import { ManualModeService } from "../services/manual-mode.service";
+import { SessionProfileService } from "../services/session-profile.service";
+import { sendTelegramNotification } from "../services/telegram.service";
 import { performLogin } from "../workers/auth-login";
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
@@ -42,12 +47,49 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         const result = await performLogin({ email, password });
 
         if (result.ok && result.loggedIn) {
+          const config = loadAppConfig();
+          if (config.telegramNotificationsEnabled && config.notifyOnSuccessfulLogin) {
+            const appState = new AppStateService();
+            const telegramResult = await sendTelegramNotification(
+              [
+                "Kleinanzeigen Login erfolgreich",
+                `Account: ${email}`,
+                `Zeit: ${new Date().toLocaleString("de-DE", {
+                  timeZone: "Europe/Berlin",
+                })}`,
+              ].join("\n")
+            );
+            appState.recordTelegramEvent(telegramResult);
+          }
+
           return reply.send({
             status: "login_successful",
             message: "Login completed successfully",
             loggedIn: result.loggedIn,
             needsLogin: !result.loggedIn,
             cookieFile: result.cookieFile,
+            ...(result.debugPort !== undefined
+              ? { debugPort: result.debugPort }
+              : {}),
+            ...(result.profileDir ? { profileDir: result.profileDir } : {}),
+            ...(result.sessionMode ? { sessionMode: result.sessionMode } : {}),
+          });
+        } else if (result.manualLoginRequired) {
+          return reply.status(409).send({
+            status: "manual_login_required",
+            message:
+              result.message ||
+              "No active session found. Start the manual login flow.",
+            loggedIn: false,
+            needsLogin: true,
+            manualLoginRequired: true,
+            cookieFile: result.cookieFile,
+            ...(result.debugPort !== undefined
+              ? { debugPort: result.debugPort }
+              : {}),
+            ...(result.profileDir ? { profileDir: result.profileDir } : {}),
+            ...(result.sessionMode ? { sessionMode: result.sessionMode } : {}),
+            error: result.error || "MANUAL_LOGIN_REQUIRED",
           });
         } else if (result.requiresEmailVerification) {
           return reply.status(200).send({
@@ -58,6 +100,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
             requiresEmailVerification: true,
             verificationReason: result.verificationReason,
             cookieFile: result.cookieFile,
+            ...(result.debugPort !== undefined
+              ? { debugPort: result.debugPort }
+              : {}),
+            ...(result.profileDir ? { profileDir: result.profileDir } : {}),
+            ...(result.sessionMode ? { sessionMode: result.sessionMode } : {}),
           });
         } else if (result.didSubmit) {
           return reply.status(401).send({
@@ -69,6 +116,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
             needsLogin: true,
             didSubmit: true,
             cookieFile: result.cookieFile,
+            ...(result.debugPort !== undefined
+              ? { debugPort: result.debugPort }
+              : {}),
+            ...(result.profileDir ? { profileDir: result.profileDir } : {}),
+            ...(result.sessionMode ? { sessionMode: result.sessionMode } : {}),
             error:
               result.error ||
               "Kleinanzeigen session could not be verified after submitting credentials",
@@ -79,6 +131,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
             message: "Login failed",
             loggedIn: false,
             needsLogin: true,
+            ...(result.debugPort !== undefined
+              ? { debugPort: result.debugPort }
+              : {}),
+            ...(result.profileDir ? { profileDir: result.profileDir } : {}),
+            ...(result.sessionMode ? { sessionMode: result.sessionMode } : {}),
             error: result.error,
           });
         }
@@ -87,6 +144,144 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(500).send({
           status: "error",
           message: err instanceof Error ? err.message : "Login failed",
+        });
+      }
+    }
+  );
+
+  app.post<{ Body: { email: string } }>(
+    "/auth/manual-login/start",
+    {
+      schema: {
+        body: {
+          type: "object",
+          properties: {
+            email: { type: "string" },
+          },
+          required: ["email"],
+          additionalProperties: false,
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { email } = request.body;
+        const sessionProfiles = new SessionProfileService();
+        const result = await sessionProfiles.startManualLogin(email);
+
+        return reply.send({
+          status: "manual_login_started",
+          message:
+            "Chrome mit persistentem Profil wurde geoeffnet. Bitte im Browser manuell einloggen und danach die Session verifizieren.",
+          email,
+          loginUrl: result.loginUrl,
+          alreadyRunning: result.alreadyRunning,
+          profile: result.status,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err) {
+        request.log.error({ err }, "manual login start failed");
+        return reply.status(400).send({
+          status: "manual_login_start_failed",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Manual login flow could not be started",
+        });
+      }
+    }
+  );
+
+  app.post<{ Body: { email: string } }>(
+    "/auth/manual-login/complete",
+    {
+      schema: {
+        body: {
+          type: "object",
+          properties: {
+            email: { type: "string" },
+          },
+          required: ["email"],
+          additionalProperties: false,
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const { email } = request.body;
+        const sessionProfiles = new SessionProfileService();
+        const result = await sessionProfiles.verifySession(email, {
+          startIfNeeded: true,
+          saveCookies: true,
+          source: "auth:manual-complete",
+        });
+
+        if (result.loggedIn) {
+          const config = loadAppConfig();
+          if (config.telegramNotificationsEnabled && config.notifyOnSuccessfulLogin) {
+            const appState = new AppStateService();
+            const telegramResult = await sendTelegramNotification(
+              [
+                "Kleinanzeigen Session verifiziert",
+                `Account: ${email}`,
+                `Zeit: ${new Date().toLocaleString("de-DE", {
+                  timeZone: "Europe/Berlin",
+                })}`,
+              ].join("\n")
+            );
+            appState.recordTelegramEvent(telegramResult);
+          }
+        }
+
+        return reply.status(result.loggedIn ? 200 : 400).send({
+          status: result.loggedIn
+            ? "manual_login_verified"
+            : "manual_login_pending",
+          message: result.loggedIn
+            ? "Session wurde verifiziert und Cookies wurden exportiert."
+            : result.error || "Session ist noch nicht authentifiziert.",
+          email,
+          loggedIn: result.loggedIn,
+          cookiesInFile: result.cookieCount,
+          profile: result.status,
+          ...(result.error ? { error: result.error } : {}),
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err) {
+        request.log.error({ err }, "manual login completion failed");
+        return reply.status(500).send({
+          status: "manual_login_error",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Manual login verification failed",
+        });
+      }
+    }
+  );
+
+  app.get<{ Params: { email: string } }>(
+    "/auth/manual-login/status/:email",
+    async (request, reply) => {
+      try {
+        const { email } = request.params;
+        const sessionProfiles = new SessionProfileService();
+        const status = await sessionProfiles.getStatus(email);
+
+        return reply.send({
+          status: "success",
+          email,
+          profile: status,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err) {
+        request.log.error({ err }, "manual login status failed");
+        return reply.status(500).send({
+          status: "error",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Manual login status failed",
         });
       }
     }
@@ -246,6 +441,66 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     async (request, reply) => {
       try {
         const { email } = request.body;
+        const manualMode = new ManualModeService();
+        const sessionProfiles = new SessionProfileService();
+        const profileStatus = await sessionProfiles.getStatus(email);
+
+        if (manualMode.isEnabled()) {
+          const validator = new CookieValidator();
+          const cookiePath = path.join(
+            process.cwd(),
+            "data",
+            "cookies",
+            `cookies-${email.replace(/[^a-zA-Z0-9]/g, "_")}.json`
+          );
+          const cookieDetails = fs.existsSync(cookiePath)
+            ? await validator.checkCookieExpiry(cookiePath)
+            : null;
+
+          return reply.send({
+            status:
+              profileStatus.state === "authenticated"
+                ? "logged_in"
+                : "manual_mode_only",
+            message:
+              profileStatus.state === "authenticated"
+                ? "Manual-only mode aktiv. Letzter bekannter Profilstatus ist eingeloggt."
+                : "Manual-only mode aktiv. Es wurde kein Live-Check gegen Kleinanzeigen ausgefuehrt.",
+            loggedIn: profileStatus.state === "authenticated",
+            cookiesInFile: cookieDetails?.cookieCount ?? 0,
+            lastValidated:
+              profileStatus.lastVerifiedAt ??
+              cookieDetails?.lastValidated?.toISOString(),
+            profile: profileStatus,
+            error:
+              profileStatus.state === "authenticated"
+                ? undefined
+                : "MANUAL_MODE_ONLY",
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        if (profileStatus.profileExists) {
+          const sessionResult = await sessionProfiles.verifySession(email, {
+            startIfNeeded: true,
+            saveCookies: true,
+            source: "auth:check-login",
+          });
+
+          return reply.send({
+            status: sessionResult.loggedIn ? "logged_in" : "not_logged_in",
+            message: sessionResult.loggedIn
+              ? "User is currently logged in via persistent profile"
+              : sessionResult.error || "User is not logged in",
+            loggedIn: sessionResult.loggedIn,
+            cookiesInFile: sessionResult.cookieCount,
+            lastValidated: sessionResult.status.lastVerifiedAt,
+            profile: sessionResult.status,
+            ...(sessionResult.error ? { error: sessionResult.error } : {}),
+            timestamp: new Date().toISOString(),
+          });
+        }
+
         const validator = new CookieValidator();
         const cookiePath = path.join(
           process.cwd(),

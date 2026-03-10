@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { appClient } from "@/lib/app-client";
-import { AppOverview, FeatureStatus } from "@/lib/app-types";
+import { AppOverview, FeatureStatus, SessionProfileState } from "@/lib/app-types";
 import {
   AlertTriangle,
   BellRing,
@@ -22,12 +22,41 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-function formatDate(value: string | null): string {
+function formatDate(value?: string | null): string {
   if (!value) {
     return "n/a";
   }
 
   return new Date(value).toLocaleString("de-DE");
+}
+
+function getSessionStatusVariant(state?: SessionProfileState | null) {
+  switch (state) {
+    case "authenticated":
+      return "default" as const;
+    case "blocked":
+    case "error":
+      return "destructive" as const;
+    default:
+      return "outline" as const;
+  }
+}
+
+function getSessionStatusLabel(state?: SessionProfileState | null): string {
+  switch (state) {
+    case "authenticated":
+      return "Session aktiv";
+    case "pending_manual_login":
+      return "Wartet auf Login";
+    case "needs_reauth":
+      return "Re-Login noetig";
+    case "blocked":
+      return "Blockiert";
+    case "error":
+      return "Fehler";
+    default:
+      return "Nicht gestartet";
+  }
 }
 
 function getStatusBadgeVariant(status: FeatureStatus) {
@@ -111,6 +140,7 @@ export default function Dashboard() {
   const liveCount = overview.features.filter((item) => item.status === "live").length;
   const partialCount = overview.features.filter((item) => item.status === "partial").length;
   const previewCount = overview.features.filter((item) => item.status === "preview").length;
+  const sessionProfile = overview.account.sessionProfile ?? null;
 
   return (
     <div className="space-y-6">
@@ -142,6 +172,9 @@ export default function Dashboard() {
             <p className="text-sm text-muted-foreground">
               Stand: {formatDate(overview.generatedAt)}
             </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Modus: {overview.runtime.manualModeOnly ? "Manual only" : "Automation aktiv"}
+            </p>
           </CardContent>
         </Card>
 
@@ -157,7 +190,13 @@ export default function Dashboard() {
               {overview.account.email || "nicht gesetzt"}
             </div>
             <p className="text-sm text-muted-foreground">
-              {overview.account.isLoggedIn
+              {sessionProfile
+                ? `${getSessionStatusLabel(sessionProfile.state)}${
+                    sessionProfile.debugPort
+                      ? ` • Profil-Port ${sessionProfile.debugPort}`
+                      : ""
+                  }`
+                : overview.account.isLoggedIn
                 ? `Cookie aktiv, ${overview.account.cookieCount} Cookies`
                 : overview.account.configured
                 ? "Noch kein gueltiger Login-Cookie erkannt"
@@ -170,15 +209,19 @@ export default function Dashboard() {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
               <Search className="h-4 w-4 text-pink-500" />
-              Search Speicher
+              Login-Session
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {overview.localSearches.folderCount}
-            </div>
+            <Badge variant={getSessionStatusVariant(sessionProfile?.state)}>
+              {getSessionStatusLabel(sessionProfile?.state)}
+            </Badge>
             <p className="text-sm text-muted-foreground">
-              {overview.localSearches.articleFolders} lokale Artikelordner
+              {overview.platformGuard.blocked && overview.platformGuard.state
+                ? `Blockiert bis ${formatDate(overview.platformGuard.state.blockedUntil)}`
+                : sessionProfile?.lastSuccessfulLoginAt
+                ? `Letzter Login: ${formatDate(sessionProfile.lastSuccessfulLoginAt)}`
+                : "Noch keine bestaetigte Session"}
             </p>
           </CardContent>
         </Card>
@@ -193,7 +236,7 @@ export default function Dashboard() {
           <CardContent>
             <div className="text-2xl font-bold">Local</div>
             <p className="text-sm text-muted-foreground">
-              Ziel: {overview.database.target}
+              Ziel: {overview.database.target} • {overview.localSearches.folderCount} Search-Ordner
             </p>
           </CardContent>
         </Card>
@@ -282,17 +325,36 @@ export default function Dashboard() {
                 {overview.account.cookieFileExists ? "vorhanden" : "fehlt"}
               </div>
               <div>
-                <span className="font-medium">Letzte Validierung:</span>{" "}
-                {formatDate(overview.account.lastValidated)}
+                <span className="font-medium">Profil-Status:</span>{" "}
+                {getSessionStatusLabel(sessionProfile?.state)}
               </div>
               <div>
-                <span className="font-medium">Naechster Ablauf:</span>{" "}
-                {formatDate(overview.account.nextExpiry)}
+                <span className="font-medium">Profil-Chrome:</span>{" "}
+                {sessionProfile?.chromeRunning ? "offen" : "zu"}
+              </div>
+              <div>
+                <span className="font-medium">Profil-Port:</span>{" "}
+                {sessionProfile?.debugPort ?? "n/a"}
+              </div>
+              <div>
+                <span className="font-medium">Letzte Validierung:</span>{" "}
+                {formatDate(
+                  sessionProfile?.lastVerifiedAt ?? overview.account.lastValidated
+                )}
+              </div>
+              <div>
+                <span className="font-medium">Letzter Session-Login:</span>{" "}
+                {formatDate(sessionProfile?.lastSuccessfulLoginAt)}
               </div>
               <div>
                 <span className="font-medium">Gueltigkeit:</span>{" "}
                 {overview.account.validityDuration}
               </div>
+              {sessionProfile?.lastError && (
+                <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm">
+                  {sessionProfile.lastError}
+                </div>
+              )}
             </CardContent>
           </Card>
 

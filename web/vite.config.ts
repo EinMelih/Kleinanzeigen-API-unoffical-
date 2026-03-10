@@ -3,6 +3,8 @@ import path from "path";
 import { defineConfig } from "vite";
 
 // https://vitejs.dev/config/
+const apiTarget = process.env["VITE_API_PROXY_TARGET"] || "http://localhost:87";
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -15,7 +17,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api": {
-        target: "http://localhost:87",
+        target: apiTarget,
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },

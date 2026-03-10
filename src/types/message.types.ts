@@ -14,10 +14,10 @@ export interface SendMessageResponse {
     status: 'sent' | 'failed' | 'conversation_opened';
     message: string;
     articleId: string;
-    sellerId?: string;
-    conversationUrl?: string;
+    sellerId?: string | undefined;
+    conversationUrl?: string | undefined;
     timestamp: string;
-    error?: string;
+    error?: string | undefined;
 }
 
 export interface ConversationInfo {
@@ -26,6 +26,15 @@ export interface ConversationInfo {
     articleTitle: string;
     sellerName: string;
     sellerId: string;
-    lastMessage?: string;
-    lastMessageDate?: string;
+    lastMessage?: string | undefined;
+    lastMessageDate?: string | undefined;
+    unread?: boolean | undefined;
+    conversationUrl?: string | undefined;
+    messages?: Array<{
+        id: string;
+        direction: "in" | "out" | "system";
+        text: string;
+        timestamp: string;
+        status: "sent" | "received" | "system";
+    }>;
 }

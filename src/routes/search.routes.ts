@@ -3,12 +3,41 @@
  * Handles Kleinanzeigen search and scraping
  */
 import { FastifyInstance } from "fastify";
+import { AppStateService } from "../services/app-state.service";
 import { SearchScraper } from "../services/search-scraper";
 import { ImageDownloader } from "../services/image-downloader.service";
+import { ManualModeService } from "../services/manual-mode.service";
+import { loadAppConfig } from "../services/app-config";
+import { sendTelegramNotification } from "../services/telegram.service";
 import * as fs from "fs";
 import * as path from "path";
 
 export async function searchRoutes(app: FastifyInstance): Promise<void> {
+  const manualMode = new ManualModeService();
+  const navigateWithFallback = async (
+    page: import("puppeteer").Page,
+    url: string
+  ): Promise<void> => {
+    try {
+      await page.goto(url, {
+        waitUntil: "domcontentloaded",
+        timeout: 60000,
+      });
+    } catch (error) {
+      const isNavigationTimeout =
+        error instanceof Error &&
+        error.message.toLowerCase().includes("navigation timeout");
+      if (!isNavigationTimeout) {
+        throw error;
+      }
+    }
+
+    await page.waitForSelector("body", {
+      timeout: 5000,
+    }).catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  };
+
   // ============================================
   // POST /search - Search with all filters
   // ============================================
@@ -53,6 +82,16 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       try {
+        if (manualMode.isEnabled()) {
+          return reply.status(403).send({
+            status: "manual_mode_only",
+            message: manualMode.getBlockedMessage(
+              "Automated search/scrape",
+              "Keep live Kleinanzeigen requests manual for now."
+            ),
+          });
+        }
+
         const {
           query,
           count = 10,
@@ -122,18 +161,50 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
             }
           }
 
+          const imageFolder = downloadImages
+            ? `data/images/search/${ImageDownloader.createSearchFolderName({
+                query,
+                location,
+                radius,
+                count: scrapeAll ? result.articlesScraped : count,
+              })}`
+            : undefined;
+          const appState = new AppStateService();
+          appState.recordSearchRun({
+            query,
+            location,
+            radius,
+            minPrice,
+            maxPrice,
+            notificationsEnabled: true,
+            resultCount: result.articles?.length ?? 0,
+            articles: result.articles ?? [],
+            localFolder: imageFolder,
+          });
+
+          const config = loadAppConfig();
+          if (
+            config.telegramNotificationsEnabled &&
+            config.notifyOnSearchRuns &&
+            (result.articles?.length ?? 0) > 0
+          ) {
+            await sendTelegramNotification(
+              [
+                "Kleinanzeigen Search-Treffer",
+                `Query: ${query}`,
+                `Treffer: ${result.articles?.length ?? 0}`,
+                location ? `Ort: ${location}` : null,
+              ]
+                .filter(Boolean)
+                .join("\n")
+            );
+          }
+
           return reply.send({
             status: "success",
             result,
             imagesDownloaded: downloadImages,
-            imageFolder: downloadImages
-              ? `data/images/search/${ImageDownloader.createSearchFolderName({
-                  query,
-                  location,
-                  radius,
-                  count: scrapeAll ? result.articlesScraped : count,
-                })}`
-              : undefined,
+            imageFolder,
             timestamp: new Date().toISOString(),
           });
         } finally {
@@ -161,6 +232,16 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
     };
   }>("/search", async (request, reply) => {
     try {
+      if (manualMode.isEnabled()) {
+        return reply.status(403).send({
+          status: "manual_mode_only",
+          message: manualMode.getBlockedMessage(
+            "Automated search/scrape",
+            "Keep live Kleinanzeigen requests manual for now."
+          ),
+        });
+      }
+
       const { q, count = "10", location, download } = request.query;
 
       if (!q) {
@@ -215,10 +296,31 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
           }
         }
 
+        const imageFolder = shouldDownload
+          ? `data/images/search/${ImageDownloader.createSearchFolderName({
+              query: q,
+              location,
+              count: parseInt(count) || 10,
+            })}`
+          : undefined;
+        const appState = new AppStateService();
+        appState.recordSearchRun({
+          query: q,
+          location,
+          radius: undefined,
+          minPrice: undefined,
+          maxPrice: undefined,
+          notificationsEnabled: true,
+          resultCount: result.articles?.length ?? 0,
+          articles: result.articles ?? [],
+          localFolder: imageFolder,
+        });
+
         return reply.send({
           status: "success",
           result,
           imagesDownloaded: shouldDownload,
+          imageFolder,
           timestamp: new Date().toISOString(),
         });
       } finally {
@@ -263,6 +365,16 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       try {
+        if (manualMode.isEnabled()) {
+          return reply.status(403).send({
+            status: "manual_mode_only",
+            message: manualMode.getBlockedMessage(
+              "Automated article scraping",
+              "Keep live Kleinanzeigen requests manual for now."
+            ),
+          });
+        }
+
         const { urls, downloadImages = false } = request.body;
 
         const scraper = new SearchScraper();
@@ -287,10 +399,7 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
                 browser as { newPage: () => Promise<unknown> }
               ).newPage()) as import("puppeteer").Page;
 
-              await page.goto(url, {
-                waitUntil: "networkidle2",
-                timeout: 30000,
-              });
+              await navigateWithFallback(page, url);
 
               // Scroll um Lazy-Loading zu triggern
               await page.evaluate(() => {
@@ -630,6 +739,15 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
             }
           }
 
+          const appState = new AppStateService();
+          appState.recordScrapedArticles({
+            articles: results
+              .filter((entry) => entry.success && entry.article)
+              .map((entry) => entry.article as unknown),
+            localFolder: undefined,
+            source: "scrape",
+          });
+
           return reply.send({
             status: "success",
             totalUrls: urls.length,
@@ -678,6 +796,16 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
     },
     async (request, reply) => {
       try {
+        if (manualMode.isEnabled()) {
+          return reply.status(403).send({
+            status: "manual_mode_only",
+            message: manualMode.getBlockedMessage(
+              "Automated single-article scraping",
+              "Keep live Kleinanzeigen requests manual for now."
+            ),
+          });
+        }
+
         const { id } = request.params;
         const shouldDownload =
           request.query.download === "true" || request.query.download === "1";
@@ -697,10 +825,7 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
             browser as { newPage: () => Promise<unknown> }
           ).newPage()) as import("puppeteer").Page;
 
-          await page.goto(articleUrl, {
-            waitUntil: "networkidle2",
-            timeout: 30000,
-          });
+          await navigateWithFallback(page, articleUrl);
 
           // Scroll to trigger lazy loading
           await page.evaluate(() => {
@@ -935,6 +1060,18 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
               .filter((d) => d.success)
               .map((d) => ({ url: d.url, localPath: d.localPath }));
           }
+
+          const appState = new AppStateService();
+          appState.recordScrapedArticles({
+            articles: [
+              {
+                ...articleData,
+                downloadedImages: shouldDownload ? downloadedImages : undefined,
+              },
+            ],
+            localFolder: undefined,
+            source: "article",
+          });
 
           return reply.send({
             status: "success",

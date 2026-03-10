@@ -38,46 +38,46 @@ export class SniperMessageService {
 
     if (tone === "direct") {
       lines.push(
-        `ich habe gerade Ihre Anzeige fuer "${title}" gesehen und habe direkt Interesse.`
+        `ich habe gerade Ihre Anzeige für "${title}" gesehen und habe direkt Interesse.`
       );
     } else if (tone === "careful") {
       lines.push(
-        `ich habe Ihre Anzeige fuer "${title}" gesehen und wuerde den Artikel gerne naeher anschauen.`
+        `ich habe Ihre Anzeige für "${title}" gesehen und würde den Artikel gerne näher anschauen.`
       );
     } else {
       lines.push(
-        `ich habe gerade Ihre Anzeige fuer "${title}" gesehen und habe Interesse an dem Artikel.`
+        `ich habe gerade Ihre Anzeige für "${title}" gesehen und habe Interesse an dem Artikel.`
       );
     }
 
-    lines.push("Ist der Artikel noch verfuegbar?");
+    lines.push("Ist der Artikel noch verfügbar?");
 
     if (priceAnalysis?.suggestedOfferPrice !== undefined) {
       lines.push(
-        `Falls Sie beim Preis noch etwas Spielraum haben, waeren fuer mich ${formatMoney(
+        `Falls Sie beim Preis noch etwas Spielraum haben, wären für mich ${formatMoney(
           priceAnalysis.suggestedOfferPrice
         )} interessant.`
       );
     }
 
     if (includePickup) {
-      lines.push("Ich koennte den Artikel bei passender Zeit auch kurzfristig abholen.");
+      lines.push("Ich könnte den Artikel bei passender Zeit auch kurzfristig abholen.");
     }
 
     if (includePaypal && includePickup) {
       lines.push(
-        "Zahlung per PayPal Kaeuferschutz oder bar bei Abholung waere fuer mich beides moeglich."
+        "Zahlung per PayPal Käuferschutz oder bar bei Abholung wäre für mich beides möglich."
       );
     } else if (includePaypal) {
-      lines.push("Zahlung per PayPal Kaeuferschutz waere fuer mich moeglich.");
+      lines.push("Zahlung per PayPal Käuferschutz wäre für mich möglich.");
     } else if (includePickup) {
-      lines.push("Barzahlung bei Abholung ist fuer mich problemlos moeglich.");
+      lines.push("Barzahlung bei Abholung ist für mich problemlos möglich.");
     }
 
     if (tone === "direct") {
-      lines.push("Danke und viele Gruesse");
+      lines.push("Danke und viele Grüße");
     } else {
-      lines.push("Viele Gruesse");
+      lines.push("Viele Grüße");
     }
 
     if (options.buyerName) {
